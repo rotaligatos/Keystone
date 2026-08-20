@@ -86,6 +86,10 @@ pre.prev{background:#0b0d11;border:1px solid var(--line);border-radius:10px;padd
   font-size:13px;display:none;max-width:min(660px,92vw);box-shadow:0 8px 30px rgba(0,0,0,.5)}
 #toast.err{border-color:var(--red);color:var(--red-ink)}
 #toast.ok{border-color:var(--green);color:var(--green-ink)}
+.buildbar{background:#3a2a08;border-bottom:1px solid #7a5a17;color:var(--amber-ink);
+  padding:7px 18px;font-size:12.5px;display:flex;align-items:center;gap:10px;justify-content:center;
+  flex-wrap:wrap}
+.buildbar b{color:#ffe9bd}
 .gate{border:1px solid var(--line);border-radius:12px;padding:13px;background:var(--panel2)}
 .mini{font-size:12px;color:var(--text2)}
 .stack{display:flex;flex-direction:column;gap:3px}
@@ -110,6 +114,7 @@ pre.prev{background:#0b0d11;border:1px solid var(--line);border-radius:10px;padd
   </div>
   <nav class="tabs" id="tabs"></nav>
 </header>
+<div id="buildbar"></div>
 
 <div class="wrap" id="view"><div class="empty">Sign in to continue.</div></div>
 
@@ -228,6 +233,7 @@ var ACTIONS={
   addProduct:function(d){addProduct(d.id)},
   mrLines:function(d){mrLines(d.id)},
   addSupplier:function(){addSupplier()},
+  buildOff:function(){buildOff()},
   openPR:function(d){openPR(d.id)},
   signPR:function(d){signPR(d.id)},
   consolidatePR:function(d){consolidatePR(d.id)},
@@ -312,6 +318,8 @@ async function _refreshUser(){
   }
   var cp=await supa.from('adm_user_caps').select('*').eq('email',ME.email).maybeSingle();
   ME.caps=cp.data||{};
+  var bm=await supa.from('adm_settings').select('value').eq('key','BUILD').maybeSingle();
+  ME.build=!!(bm.data&&bm.data.value&&bm.data.value.on);
   // Admin tier gets the operational capabilities, but NOT the approver roles.
   // Rommel and Kathleen are both Admin tier; if being an Admin granted the
   // Managing Director role, Rommel could approve his own big order alone and
@@ -374,8 +382,19 @@ function drawTabs(){
 }
 function go(k){TAB=k;drawTabs();render()}
 
+function drawBuildBar(){
+  var b=el('buildbar'); if(!b)return;
+  if(!ME.build){b.innerHTML='';return}
+  b.className='buildbar';
+  b.innerHTML='<i class="ti ti-tools"></i> <b>BUILD MODE</b> — approval roles are relaxed for '+
+    'Admins so the app can be set up and tested. Every action taken this way is marked '+
+    '<b>BUILD MODE</b> in the audit trail.'+
+    (ME.caps.adminTier
+      ? ' <button class="ghost" data-act="buildOff" style="padding:3px 10px;font-size:12px">'+
+        'Switch off — go live</button>' : '');
+}
 function render(){
-  drawTabs();
+  drawTabs(); drawBuildBar();
   if(!ME.email){el('view').innerHTML=
     '<div class="card"><h3>Sign in required</h3>'+
     '<p class="sub">Use the same Google account you use for Modcraft. '+
@@ -592,6 +611,11 @@ function release(gid){
 function genPR(serial){
   rpcPreview('adm_generate_pr_from_quotation',{p_serial:serial},
     'Generate purchase request from outsource items');
+}
+
+function buildOff(){
+  rpcPreview('adm_set_build_mode',{p_on:false},'Switch off Build Mode — go live',
+    function(){ ME.build=false; toast('Build Mode off. Approval roles now apply strictly.','ok'); render(); });
 }
 
 /* ================= MY REQUESTS (user review & combine) =================
