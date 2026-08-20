@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>KEYSTONE — Purchasing &amp; Production Release</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
+<style>
+:root{
+  --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+  --text:#e7e9ee; --text2:#9aa3b2; --accent:#4f8cff; --accent-ink:#bcd4ff;
+  --green:#2ea86b; --green-ink:#8ef0bd; --amber:#d99a2b; --amber-ink:#ffd894;
+  --red:#d8524d; --red-ink:#ffb3b0; --teal:#1f9c9c; --teal-ink:#9ff0f0;
+  --violet:#7c6ce0; --radius:12px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+  font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+a{color:var(--accent-ink)}
+button{font:inherit;cursor:pointer;border:0;border-radius:8px;padding:8px 14px;
+  background:var(--panel2);color:var(--text);border:1px solid var(--line)}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+button.danger{background:var(--red);color:#fff;border-color:var(--red)}
+button.ghost{background:transparent}
+button:disabled{opacity:.45;cursor:not-allowed}
+input,select,textarea{font:inherit;background:var(--panel2);color:var(--text);
+  border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%}
+label{display:block;font-size:12px;color:var(--text2);margin:10px 0 4px}
+.wrap{max-width:1360px;margin:0 auto;padding:0 18px 80px}
+header.top{position:sticky;top:0;z-index:40;background:rgba(15,17,21,.92);
+  backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.topin{max-width:1360px;margin:0 auto;padding:12px 18px;display:flex;align-items:center;gap:14px}
+.brand{font-weight:700;letter-spacing:.2px;display:flex;align-items:center;gap:9px}
+.brand i{color:var(--accent)}
+.spacer{flex:1}
+.who{font-size:12px;color:var(--text2);text-align:right;line-height:1.35}
+nav.tabs{display:flex;gap:4px;overflow-x:auto;padding:0 18px;max-width:1360px;margin:0 auto}
+nav.tabs button{background:transparent;border:0;border-bottom:2px solid transparent;
+  border-radius:0;padding:10px 13px;color:var(--text2);white-space:nowrap}
+nav.tabs button.on{color:var(--text);border-bottom-color:var(--accent)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:16px;margin:14px 0}
+.card h3{margin:0 0 4px;font-size:15px}
+.sub{color:var(--text2);font-size:12.5px;margin:0 0 12px}
+.grid{display:grid;gap:12px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+.g4{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--text2);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px}
+tbody tr:hover{background:var(--panel2)}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;
+  font-weight:600;border:1px solid;white-space:nowrap}
+.p-grey{color:var(--text2);border-color:var(--line);background:var(--panel2)}
+.p-blue{color:var(--accent-ink);border-color:#2c4a80;background:#16233a}
+.p-green{color:var(--green-ink);border-color:#1f6b47;background:#10261c}
+.p-amber{color:var(--amber-ink);border-color:#7a5a17;background:#2a2110}
+.p-red{color:var(--red-ink);border-color:#7d3330;background:#2c1615}
+.p-teal{color:var(--teal-ink);border-color:#186767;background:#0f2626}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px}
+.kpi .lbl{font-size:11.5px;color:var(--text2);text-transform:uppercase;letter-spacing:.4px}
+.kpi .val{font-size:23px;font-weight:700;margin-top:6px;font-variant-numeric:tabular-nums}
+.kpi .hint{font-size:11.5px;color:var(--text2);margin-top:2px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.62);display:none;
+  align-items:center;justify-content:center;z-index:80;padding:18px}
+.modal.on{display:flex}
+.modal .box{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  width:min(760px,100%);max-height:88vh;overflow:auto;padding:20px}
+.modal h3{margin:0 0 10px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.right{justify-content:flex-end}
+pre.prev{background:#0b0d11;border:1px solid var(--line);border-radius:10px;padding:12px;
+  font-size:12px;overflow:auto;max-height:320px;color:var(--accent-ink);white-space:pre-wrap}
+.empty{color:var(--text2);text-align:center;padding:30px 10px;font-size:13px}
+.warn{background:#2a2110;border:1px solid #7a5a17;color:var(--amber-ink);
+  border-radius:10px;padding:10px 12px;font-size:12.5px;margin:10px 0}
+.info{background:#16233a;border:1px solid #2c4a80;color:var(--accent-ink);
+  border-radius:10px;padding:10px 12px;font-size:12.5px;margin:10px 0}
+.bar{height:7px;background:var(--panel2);border-radius:99px;overflow:hidden;margin-top:6px;
+  border:1px solid var(--line)}
+.bar > i{display:block;height:100%;background:var(--green)}
+#toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:99;
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px 16px;
+  font-size:13px;display:none;max-width:min(660px,92vw);box-shadow:0 8px 30px rgba(0,0,0,.5)}
+#toast.err{border-color:var(--red);color:var(--red-ink)}
+#toast.ok{border-color:var(--green);color:var(--green-ink)}
+.gate{border:1px solid var(--line);border-radius:12px;padding:13px;background:var(--panel2)}
+.mini{font-size:12px;color:var(--text2)}
+.stack{display:flex;flex-direction:column;gap:3px}
+@media(max-width:640px){.topin{flex-wrap:wrap}.who{text-align:left}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="topin">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+        <path d="M7.6 4h8.8l3.1 16H4.5z" fill="none" stroke="var(--accent)" stroke-width="1.9"
+              stroke-linejoin="round"/>
+        <path d="M9.9 9.3h4.2M9.4 13.6h5.2" stroke="var(--accent)" stroke-width="1.6"
+              stroke-linecap="round" opacity=".55"/>
+      </svg>KEYSTONE</div>
+    <span class="pill p-grey" id="envPill">Purchasing &amp; Production Release</span>
+    <div class="spacer"></div>
+    <div class="who" id="who">Not signed in</div>
+    <button id="authBtn" class="primary">Sign in with Google</button>
+  </div>
+  <nav class="tabs" id="tabs"></nav>
+</header>
+
+<div class="wrap" id="view"><div class="empty">Sign in to continue.</div></div>
+
+<div class="modal" id="modal"><div class="box" id="modalBox"></div></div>
+<div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* ==========================================================================
+   KEYSTONE — purchasing, sourcing, and the Modcraft → PMES payment gate.
+   Named for the wedge stone that locks an arch: nothing reaches production
+   until this is in place.
+   Same conventions as Modcraft: one static file, no build step, supabase-js
+   v2, Google OAuth (PKCE). The publishable key is public by design — RLS is
+   what protects the data, exactly as in index.html.
+   ========================================================================== */
+var SUPA_URL='https://nkpekroogqsmfilypowd.supabase.co';
+var SUPA_ANON_KEY='sb_publishable_jpp6ZiFup3v0VVRJtjCOTQ_bF-SEpt4';
+
+/* ---------------------------------------------------------------------------
+   Never fail into a blank page. A white screen is indistinguishable from "the
+   app is broken" and tells the person nothing they can act on. Anything that
+   goes wrong before or during boot gets explained on screen instead.
+   --------------------------------------------------------------------------- */
+function fatalCard(title, body, showReload){
+  var v=document.getElementById('view');
+  if(!v)return;
+  v.innerHTML='<div class="card"><h3>'+title+'</h3>'+body+
+    (showReload?'<button class="primary" data-act="reload">Reload</button>':'')+'</div>';
+}
+window.addEventListener('error',function(e){
+  var v=document.getElementById('view');
+  if(v&&(!v.innerHTML.trim()||v.innerText.indexOf('Loading')>=0||v.innerText.indexOf('Sign in to continue')>=0)){
+    fatalCard('Something went wrong while loading',
+      '<p class="sub">The app hit an unexpected error. The details below help diagnose it.</p>'+
+      '<pre class="prev">'+String((e&&e.message)||e)+'</pre>', true);
+  }
+});
+
+/* This app must be served from a real http(s) address. Google sign-in has to
+   redirect back to the page afterwards, and it cannot redirect to a local file
+   or to a sandboxed preview — the sign-in appears to work and you land on
+   nothing. Detect that up front and say so, rather than letting it happen. */
+var PROTO=location.protocol;
+var HOSTED=(PROTO==='http:'||PROTO==='https:')&&location.hostname!=='';
+if(!HOSTED){
+  fatalCard('This app needs to be hosted before you can sign in',
+    '<p class="sub">It is open from <code>'+String(PROTO)+'</code>, which has no web address. '+
+    'Google sign-in must send you back to the page after you authenticate, and it cannot send you '+
+    'back to a file path or a preview window &mdash; so you end up on a blank screen.</p>'+
+    '<p class="sub"><b>Two ways to fix it:</b></p>'+
+    '<p class="sub">1. <b>Publish it</b> &mdash; put <code>index.html</code> in its own GitHub repo '+
+    'and turn on GitHub Pages, the same way Modcraft is published. This is the real answer.</p>'+
+    '<p class="sub">2. <b>Try it locally first</b> &mdash; open a terminal in the folder holding '+
+    'this file and run <code>python -m http.server 8000</code>, then visit '+
+    '<code>http://localhost:8000</code>.</p>'+
+    '<p class="sub">Either way, add that address to Supabase &rarr; Authentication &rarr; '+
+    'URL Configuration &rarr; <b>Redirect URLs</b>, or sign-in will bounce you back to Modcraft.</p>',
+    false);
+  throw new Error('not hosted');
+}
+
+if(!window.supabase||!window.supabase.createClient){
+  fatalCard('Could not load the database library',
+    '<p class="sub">The app needs <code>@supabase/supabase-js</code> from jsdelivr.net and the '+
+    'browser could not reach it. That is a network or firewall problem, not your data.</p>', true);
+  throw new Error('supabase-js failed to load');
+}
+
+var supa=window.supabase.createClient(SUPA_URL,SUPA_ANON_KEY,{
+  auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,flowType:'pkce'}});
+
+var ME={email:null,name:null,role:null,company:null,caps:{}};
+var TAB='queue';
+var CACHE={};
+
+/* ---------- small helpers ---------- */
+function el(id){return document.getElementById(id)}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function money(n){if(n==null||n==='')return '—';
+  return '\u20b1'+Number(n).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function num(n){if(n==null||n==='')return '—';return Number(n).toLocaleString('en-PH')}
+function dt(s){if(!s)return '—';var d=new Date(s);
+  return d.toLocaleDateString('en-PH',{year:'numeric',month:'short',day:'numeric'})}
+function toast(msg,kind){var t=el('toast');t.textContent=msg;t.className=kind||'';
+  t.style.display='block';clearTimeout(toast._t);
+  toast._t=setTimeout(function(){t.style.display='none'},kind==='err'?9000:4200)}
+function errMsg(e){
+  var m=(e&&(e.message||e.error_description||e.details))||String(e);
+  return m.replace(/^.*?ERROR:\s*[A-Z0-9]+:\s*/,'');
+}
+function closeModal(){el('modal').classList.remove('on');el('modalBox').innerHTML=''}
+function openModal(html){el('modalBox').innerHTML=html;el('modal').classList.add('on')}
+el('modal').addEventListener('click',function(e){if(e.target===el('modal'))closeModal()});
+
+/* Every interactive control is declared with data- attributes and dispatched
+   here. Handlers are NEVER built by string concatenation: an apostrophe in a
+   supplier name or quotation serial would otherwise break out of the attribute
+   and execute — the browser HTML-decodes the attribute before the JS parser
+   sees it, so escaping alone does not save you. This codebase has been bitten
+   by exactly that bug before. */
+var ACTIONS={
+  go:function(d){go(d.tab)},
+  genPR:function(d){genPR(d.serial)},
+  openGate:function(d){openGate(d.serial)},
+  recordPay:function(d){recordPay(d.gate)},
+  vouch:function(d){vouch(d.gate)},
+  buildMR:function(d){buildMR(d.gate)},
+  release:function(d){release(d.gate)},
+  prLines:function(d){prLines(d.id)},
+  submitPR:function(d){submitPR(d.id)},
+  approvePR:function(d){decidePR(d.id,true)},
+  rejectPR:function(d){decidePR(d.id,false)},
+  supProducts:function(d){supProducts(d.id,d.name)},
+  addProduct:function(d){addProduct(d.id)},
+  mrLines:function(d){mrLines(d.id)},
+  addSupplier:function(){addSupplier()},
+  closeModal:function(){closeModal()},
+  reload:function(){location.reload()}
+};
+document.addEventListener('click',function(e){
+  var t=e.target&&e.target.closest?e.target.closest('[data-act]'):null;
+  if(!t)return;
+  var fn=ACTIONS[t.getAttribute('data-act')];
+  if(fn){e.preventDefault();fn(t.dataset)}
+});
+
+/* Gate + PR status → pill colour. Kept in one place so a new status can never
+   silently render as an unstyled blank. */
+var PILL={
+  pending_payment:'p-amber', paid:'p-green', vouched:'p-teal',
+  released:'p-blue', cancelled:'p-grey',
+  draft:'p-grey', canvassing:'p-amber', submitted:'p-blue',
+  approved:'p-green', rejected:'p-red', ordered:'p-teal', closed:'p-grey',
+  authorized:'p-green', issued:'p-teal', partially_issued:'p-amber'
+};
+function pill(s){if(!s)return '<span class="pill p-grey">—</span>';
+  return '<span class="pill '+(PILL[s]||'p-grey')+'">'+esc(String(s).replace(/_/g,' '))+'</span>'}
+
+/* ---------- auth ---------- */
+async function refreshUser(){
+  try{ await _refreshUser() }
+  catch(e){
+    fatalCard('Could not finish signing you in',
+      '<p class="sub">You authenticated with Google, but the app could not load your profile.</p>'+
+      '<pre class="prev">'+esc(errMsg(e))+'</pre>'+
+      '<p class="sub">If this says something about a redirect or an invalid URL, add this page’s '+
+      'address to Supabase &rarr; Authentication &rarr; URL Configuration &rarr; Redirect URLs.</p>', true);
+  }
+}
+async function _refreshUser(){
+  // Google can hand back an error in the URL — surface it instead of hanging.
+  var qp=new URLSearchParams(location.search.replace(/^\?/,''));
+  var hp=new URLSearchParams(location.hash.replace(/^#/,''));
+  var oauthErr=qp.get('error_description')||qp.get('error')||hp.get('error_description')||hp.get('error');
+  if(oauthErr){
+    fatalCard('Google sign-in was refused',
+      '<pre class="prev">'+esc(oauthErr)+'</pre>'+
+      '<p class="sub">Most often this means this page’s address is not listed in Supabase &rarr; '+
+      'Authentication &rarr; URL Configuration &rarr; Redirect URLs.</p>', true);
+    return;
+  }
+  var s=await supa.auth.getSession();
+  var u=s.data.session&&s.data.session.user;
+  if(!u){ME.email=null;render();return}
+  ME.email=(u.email||'').trim().toLowerCase();
+  var pr=await supa.from('users').select('name,role,company')
+    .ilike('email',ME.email).limit(1).maybeSingle();
+  if(pr.data){ME.name=pr.data.name;ME.role=pr.data.role;ME.company=pr.data.company}
+  else{
+    // Signed in with Google, but this address is not a Modcraft user. Without a
+    // role and company, RLS correctly returns nothing — which would otherwise
+    // look like an empty, broken app.
+    el('who').innerHTML='<b>'+esc(ME.email)+'</b><br>not a Modcraft user';
+    el('authBtn').textContent='Sign out';
+    drawTabs();
+    fatalCard('Your account is not set up in Modcraft',
+      '<p class="sub">You signed in as <b>'+esc(ME.email)+'</b>, but that address has no active row '+
+      'in Modcraft’s user list, so there is nothing this app is allowed to show you.</p>'+
+      '<p class="sub">Ask an Admin to add you in Modcraft &rarr; Settings &rarr; Users, then sign in '+
+      'again. This app deliberately has no separate user list — your role and company come from '+
+      'Modcraft.</p>', false);
+    return;
+  }
+  var cp=await supa.from('adm_user_caps').select('*').eq('email',ME.email).maybeSingle();
+  ME.caps=cp.data||{};
+  if(ME.role==='Admin'||ME.role==='Director'){
+    ME.caps={can_request:1,can_approve:1,can_vouch:1,can_release:1,can_source:1,adminTier:1};
+  }
+  el('who').innerHTML='<b>'+esc(ME.name||ME.email)+'</b><br>'+
+    esc(ME.role||'no role')+(ME.company?' · '+esc(ME.company):'');
+  el('authBtn').textContent='Sign out';
+  render();
+}
+el('authBtn').onclick=async function(){
+  if(ME.email){await supa.auth.signOut();location.reload();return}
+  await supa.auth.signInWithOAuth({provider:'google',
+    options:{redirectTo:location.href.split('#')[0]}});
+};
+
+/* ---------- RPC with preview-first confirmation ----------
+   Every mutating action goes through here: it first calls the function with
+   confirm=false, shows exactly what would change, and only calls again with
+   confirm=true once the person agrees. Nothing destructive happens unasked. */
+async function rpcPreview(fn,args,title,onDone){
+  var p=await supa.rpc(fn,Object.assign({},args,{p_confirm:false}));
+  if(p.error){toast(errMsg(p.error),'err');return}
+  openModal(
+    '<h3>'+esc(title)+'</h3>'+
+    '<p class="sub">Review what this will do. Nothing has been saved yet.</p>'+
+    '<pre class="prev">'+esc(JSON.stringify(p.data,null,2))+'</pre>'+
+    '<div class="row right" style="margin-top:14px">'+
+      '<button class="ghost" data-act="closeModal">Cancel</button>'+
+      '<button class="primary" id="goBtn">Confirm</button></div>');
+  el('goBtn').onclick=async function(){
+    this.disabled=true;this.textContent='Working…';
+    var r=await supa.rpc(fn,Object.assign({},args,{p_confirm:true}));
+    closeModal();
+    if(r.error){toast(errMsg(r.error),'err');return}
+    toast('Done.','ok');
+    CACHE={};
+    if(onDone)onDone(r.data); else render();
+  };
+}
+
+/* ================= TABS ================= */
+var TABS=[
+  {k:'queue',  t:'Release Queue',    i:'ti-lock-open'},
+  {k:'pr',     t:'Purchase Requests',i:'ti-file-invoice'},
+  {k:'src',    t:'Sourcing',         i:'ti-building-store'},
+  {k:'mr',     t:'Material Requests',i:'ti-package'},
+  {k:'dash',   t:'Dashboard & KPI',  i:'ti-chart-bar'},
+  {k:'prov',   t:'Plant & HRIS',     i:'ti-plug-connected'}
+];
+function drawTabs(){
+  el('tabs').innerHTML=TABS.map(function(t){
+    return '<button class="'+(TAB===t.k?'on':'')+'" data-act="go" data-tab="'+esc(t.k)+'">'+
+      '<i class="ti '+t.i+'"></i> '+esc(t.t)+'</button>'}).join('');
+}
+function go(k){TAB=k;drawTabs();render()}
+
+function render(){
+  drawTabs();
+  if(!ME.email){el('view').innerHTML=
+    '<div class="card"><h3>Sign in required</h3>'+
+    '<p class="sub">Use the same Google account you use for Modcraft. '+
+    'What you can see and do here follows your Modcraft role.</p></div>';return}
+  var fn = TAB==='queue'?viewQueue : TAB==='pr'?viewPR : TAB==='src'?viewSourcing
+         : TAB==='mr'?viewMR : TAB==='dash'?viewDash : viewProv;
+  // A screen that fails must say why. Silence here reads as "the app is broken".
+  Promise.resolve().then(fn).catch(function(e){
+    fatalCard('This screen could not load',
+      '<p class="sub">The rest of the app still works — switch tabs above.</p>'+
+      '<pre class="prev">'+esc(errMsg(e))+'</pre>', true);
+  });
+}
+
+/* ================= 1. RELEASE QUEUE ================= */
+async function viewQueue(){
+  el('view').innerHTML='<div class="empty">Loading approved quotations…</div>';
+  var q=await supa.from('adm_v_release_queue').select('*')
+    .order('total',{ascending:false}).limit(300);
+  if(q.error){el('view').innerHTML='<div class="card"><div class="warn">'+
+    esc(errMsg(q.error))+'</div></div>';return}
+
+  var rows=(q.data||[]).filter(function(r){return r.fq_client_approved||r.iq_client_approved});
+  var fq=rows.filter(function(r){return r.fq_client_approved});
+  var iq=rows.filter(function(r){return !r.fq_client_approved});
+
+  var h='<div class="card"><h3>Release Queue</h3>'+
+    '<p class="sub">Quotations the client has approved. A final-approved quotation '+
+    'stays <b>pending</b> until the agreed payment terms are met or someone vouches for it — '+
+    'only then can the material request and Job Order be unlocked in Modcraft PMES.</p>'+
+    '<div class="grid g4">'+
+      kpi('Final approved',fq.length,'ready for a payment gate')+
+      kpi('Awaiting payment',fq.filter(function(r){return r.gate_status==='pending_payment'}).length,'gate open, terms not met')+
+      kpi('Cleared to release',fq.filter(function(r){return r.gate_status==='paid'||r.gate_status==='vouched'}).length,'admin can unlock now')+
+      kpi('Released to production',fq.filter(function(r){return r.gate_status==='released'}).length,'JO active in PMES')+
+    '</div></div>';
+
+  h+='<div class="card"><h3>Final Quotation approved</h3>'+
+     '<p class="sub">These are live jobs. Payment status here is what PMES reads back.</p>'+
+     (fq.length?fq.map(gateCard).join(''):'<div class="empty">Nothing final-approved yet.</div>')+
+     '</div>';
+
+  h+='<div class="card"><h3>Initial Quotation approved — canvassing only</h3>'+
+     '<p class="sub">Not yet final-approved. You can generate a purchase request and start '+
+     'canvassing suppliers, but it cannot be sent for approval and cannot unlock production.</p>'+
+     (iq.length?'<table><thead><tr><th>Quotation</th><th>Client</th><th class="num">Total</th>'+
+       '<th>Purchase request</th><th></th></tr></thead><tbody>'+
+       iq.map(function(r){return '<tr>'+
+         '<td><b>'+esc(r.serial)+'</b><div class="mini">'+esc(r.company||'')+'</div></td>'+
+         '<td>'+esc(r.client_name||'—')+'</td>'+
+         '<td class="num">'+money(r.total)+'</td>'+
+         '<td>'+(r.pr_no?esc(r.pr_no)+' '+pill(r.pr_status):'<span class="mini">none</span>')+'</td>'+
+         '<td class="num">'+(r.pr_no?'':
+           '<button data-act="genPR" data-serial="'+esc(r.serial)+'">Generate PR</button>')+'</td>'+
+       '</tr>'}).join('')+'</tbody></table>'
+      :'<div class="empty">Nothing at initial-approval stage.</div>')+'</div>';
+
+  el('view').innerHTML=h;
+}
+
+function kpi(lbl,val,hint){
+  return '<div class="kpi"><div class="lbl">'+esc(lbl)+'</div>'+
+    '<div class="val">'+esc(String(val))+'</div>'+
+    '<div class="hint">'+esc(hint||'')+'</div></div>';
+}
+
+function gateCard(r){
+  var pct=r.amount_due&&r.amount_due>0?Math.min(100,(r.amount_paid||0)/r.amount_due*100):0;
+  var need=r.required_amount||0;
+  var canAct=ME.caps.can_release||ME.caps.can_approve;
+  var h='<div class="gate" style="margin-bottom:10px">'+
+    '<div class="row"><b>'+esc(r.serial)+'</b>'+
+      (r.gate_id?pill(r.gate_status):'<span class="pill p-grey">no gate</span>')+
+      (r.pmes_job_code?'<span class="pill p-blue">JO '+esc(r.pmes_job_code)+'</span>':'')+
+      '<div class="spacer" style="flex:1"></div>'+
+      '<span class="mini">'+esc(r.client_name||'')+' · '+esc(r.company||'')+'</span></div>';
+
+  if(!r.gate_id){
+    h+='<div class="row" style="margin-top:9px"><span class="mini">Quotation total '+
+       money(r.total)+'</span><div style="flex:1"></div>'+
+       (canAct?'<button class="primary" data-act="openGate" data-serial="'+esc(r.serial)+'">'+
+         'Open payment gate</button>':'<span class="mini">No permission to open a gate</span>')+
+       '</div></div>';
+    return h;
+  }
+
+  h+='<div class="grid g4" style="margin-top:10px">'+
+     '<div class="stack"><span class="mini">Contract</span><b>'+money(r.amount_due)+'</b></div>'+
+     '<div class="stack"><span class="mini">Terms ('+num(r.required_pct)+'%)</span><b>'+money(need)+'</b></div>'+
+     '<div class="stack"><span class="mini">Paid</span><b style="color:var(--green-ink)">'+money(r.amount_paid)+'</b></div>'+
+     '<div class="stack"><span class="mini">Balance</span><b style="color:var(--amber-ink)">'+money(r.balance)+'</b></div>'+
+     '</div>'+
+     '<div class="bar"><i style="width:'+pct.toFixed(1)+'%"></i></div>'+
+     '<div class="mini" style="margin-top:5px">'+esc(r.payment_terms||'No terms recorded')+'</div>';
+
+  if(r.gate_status!=='released'){
+    h+='<div class="row" style="margin-top:11px">'+
+      (canAct?'<button data-act="recordPay" data-gate="'+esc(r.gate_id)+'"><i class="ti ti-cash"></i> Record payment</button>':'')+
+      (ME.caps.can_vouch?'<button data-act="vouch" data-gate="'+esc(r.gate_id)+'"><i class="ti ti-shield-check"></i> Vouch</button>':'')+
+      (ME.caps.can_release?'<button data-act="buildMR" data-gate="'+esc(r.gate_id)+'"><i class="ti ti-list-details"></i> Build material requests</button>':'')+
+      (ME.caps.can_release&&(r.gate_status==='paid'||r.gate_status==='vouched')
+        ?'<button class="primary" data-act="release" data-gate="'+esc(r.gate_id)+'"><i class="ti ti-lock-open"></i> Unlock MR + Job Order</button>'
+        :'<button disabled title="Terms must be met, or the job vouched">Unlock MR + Job Order</button>')+
+      '</div>';
+  } else {
+    h+='<div class="info" style="margin-top:10px"><i class="ti ti-check"></i> Released '+
+       dt(r.released_at)+'. Modcraft PMES sees this job as active and paid.</div>';
+  }
+  return h+'</div>';
+}
+
+async function openGate(serial){
+  var q=await supa.from('adm_v_release_queue').select('*').eq('serial',serial).maybeSingle();
+  var r=q.data||{};
+  var cfg=(CACHE.cfg&&CACHE.cfg.value)||{};
+  var terms=(cfg.termsPresets)||['100% upon approval','50% downpayment, 50% before delivery',
+    '30% downpayment, 70% before delivery'];
+  var opts=(cfg.paymentOptions)||['Bank transfer','Cheque','Cash','Online'];
+  openModal('<h3>Open payment gate — '+esc(serial)+'</h3>'+
+    '<p class="sub">The gate holds production shut until these terms are met. '+
+    'Terms are entered manually for now; when Modcraft exposes client payment terms '+
+    'they can be pulled in automatically.</p>'+
+    '<div class="grid g2">'+
+      '<div><label>Contract amount</label><input id="gAmt" type="number" step="0.01" value="'+(r.total||0)+'"></div>'+
+      '<div><label>Destination company</label><select id="gCo">'+
+        ['MSSI','WCLI','CWLI'].map(function(c){return '<option>'+c+'</option>'}).join('')+
+        '</select></div>'+
+      '<div><label>Payment option</label><select id="gOpt">'+
+        opts.map(function(o){return '<option>'+esc(o)+'</option>'}).join('')+'</select></div>'+
+      '<div><label>Required to unlock (%)</label><input id="gPct" type="number" min="1" max="100" value="50"></div>'+
+    '</div>'+
+    '<label>Agreed terms</label><select id="gTerms" onchange="el(\'gTermsTxt\').value=this.value">'+
+      terms.map(function(t){return '<option>'+esc(t)+'</option>'}).join('')+'</select>'+
+    '<input id="gTermsTxt" style="margin-top:6px" value="'+esc(terms[1]||terms[0])+'">'+
+    '<div class="row right" style="margin-top:14px">'+
+      '<button class="ghost" data-act="closeModal">Cancel</button>'+
+      '<button class="primary" id="okGate">Open gate</button></div>');
+  el('okGate').onclick=async function(){
+    this.disabled=true;
+    var ins=await supa.from('adm_release_gates').insert({
+      quotation_serial:serial, company:r.company,
+      destination_company:el('gCo').value,
+      quotation_total:r.total, amount_due:parseFloat(el('gAmt').value)||0,
+      payment_option:el('gOpt').value, payment_terms:el('gTermsTxt').value,
+      required_pct:parseFloat(el('gPct').value)||100,
+      source_quotation_status:r.status, created_by:ME.email});
+    closeModal();
+    if(ins.error){toast(errMsg(ins.error),'err');return}
+    toast('Gate opened.','ok');render();
+  };
+}
+
+async function recordPay(gid){
+  openModal('<h3>Record a payment</h3>'+
+    '<p class="sub">This is an append-only ledger — payments can be added, never edited away.</p>'+
+    '<div class="grid g2">'+
+    '<div><label>Amount</label><input id="pAmt" type="number" step="0.01"></div>'+
+    '<div><label>Method</label><select id="pMeth"><option>bank</option><option>cheque</option>'+
+      '<option>cash</option><option>online</option></select></div></div>'+
+    '<label>Reference (OR / deposit slip / transaction no.)</label><input id="pRef">'+
+    '<label>Notes</label><input id="pNote">'+
+    '<div class="row right" style="margin-top:14px">'+
+      '<button class="ghost" data-act="closeModal">Cancel</button>'+
+      '<button class="primary" id="okPay">Record</button></div>');
+  el('okPay').onclick=async function(){
+    var amt=parseFloat(el('pAmt').value);
+    if(!(amt>0)){toast('Enter an amount greater than zero.','err');return}
+    this.disabled=true;
+    var r=await supa.from('adm_payments').insert({gate_id:gid,kind:'payment',amount:amt,
+      method:el('pMeth').value,reference:el('pRef').value||null,
+      notes:el('pNote').value||null,recorded_by:ME.email});
+    closeModal();
+    if(r.error){toast(errMsg(r.error),'err');return}
+    toast('Payment recorded.','ok');render();
+  };
+}
+
+function vouch(gid){
+  openModal('<h3>Vouch for this job</h3>'+
+    '<div class="warn">Vouching unlocks production <b>without payment</b>. '+
+    'It is recorded against your name with your reason, and can be given an expiry.</div>'+
+    '<label>Reason (required)</label><textarea id="vR" rows="3"></textarea>'+
+    '<label>Vouch expires (optional)</label><input id="vE" type="date">'+
+    '<div class="row right" style="margin-top:14px">'+
+      '<button class="ghost" data-act="closeModal">Cancel</button>'+
+      '<button class="primary" id="okV">Continue</button></div>');
+  el('okV').onclick=function(){
+    var reason=el('vR').value.trim();
+    if(!reason){toast('A reason is required to vouch.','err');return}
+    var exp=el('vE').value?new Date(el('vE').value).toISOString():null;
+    closeModal();
+    rpcPreview('adm_vouch_gate',{p_gate_id:gid,p_reason:reason,p_expires_at:exp},
+      'Vouch — review');
+  };
+}
+
+function buildMR(gid){
+  rpcPreview('adm_build_material_requests',{p_gate_id:gid},
+    'Build material requests — review');
+}
+
+function release(gid){
+  var reason=null;
+  if(ME.caps.adminTier){
+    reason=prompt('If you opened this gate yourself, an override reason is required '+
+      '(leave blank if someone else opened it):')||null;
+  }
+  rpcPreview('adm_release_gate',
+    {p_gate_id:gid,p_override_reason:reason},
+    'Unlock material request + Job Order — review');
+}
+
+function genPR(serial){
+  rpcPreview('adm_generate_pr_from_quotation',{p_serial:serial},
+    'Generate purchase request from outsource items');
+}
+
+/* ================= 2. PURCHASE REQUESTS ================= */
+async function viewPR(){
+  el('view').innerHTML='<div class="empty">Loading purchase requests…</div>';
+  var q=await supa.from('adm_purchase_requests').select('*')
+    .order('created_at',{ascending:false}).limit(200);
+  if(q.error){el('view').innerHTML='<div class="card"><div class="warn">'+esc(errMsg(q.error))+'</div></div>';return}
+  var rows=q.data||[];
+  var h='<div class="card"><h3>Purchase Requests</h3>'+
+    '<p class="sub">Generated automatically from the <b>outsource materials and hardware</b> on a '+
+    'quotation — the items Modcraft does not stock and must buy in. A request stays in '+
+    '<b>canvassing</b> until the Final Quotation is client-approved; only then can it go to a superior '+
+    'for approval.</p>'+
+    (rows.length?'<table><thead><tr><th>PR</th><th>Quotation</th><th>Title</th>'+
+      '<th class="num">Est. total</th><th>Status</th><th>Requested by</th><th></th></tr></thead><tbody>'+
+      rows.map(function(r){
+        var acts='';
+        if(r.status==='canvassing'||r.status==='draft'){
+          acts+='<button data-act="submitPR" data-id="'+esc(r.id)+'">Send for approval</button> ';
+        }
+        if(r.status==='submitted'&&ME.caps.can_approve){
+          acts+='<button class="primary" data-act="approvePR" data-id="'+esc(r.id)+'">Approve</button> '+
+                '<button class="danger" data-act="rejectPR" data-id="'+esc(r.id)+'">Reject</button>';
+        }
+        return '<tr>'+
+          '<td><b>'+esc(r.pr_no||'—')+'</b>'+(r.auto_generated?'<div class="mini">auto · '+esc(r.source_stage||'')+'</div>':'')+'</td>'+
+          '<td>'+esc(r.quotation_serial||'—')+'</td>'+
+          '<td>'+esc(r.title||'')+'</td>'+
+          '<td class="num">'+money(r.est_total)+'</td>'+
+          '<td>'+pill(r.status)+'</td>'+
+          '<td class="mini">'+esc(r.requested_by||'')+'</td>'+
+          '<td class="num" style="white-space:nowrap">'+
+            '<button class="ghost" data-act="prLines" data-id="'+esc(r.id)+'">Lines</button> '+acts+'</td></tr>'}).join('')+
+      '</tbody></table>':'<div class="empty">No purchase requests yet. Generate one from the Release Queue.</div>')+
+    '</div>';
+  el('view').innerHTML=h;
+}
+async function prLines(id){
+  var q=await supa.from('adm_pr_lines').select('*').eq('pr_id',id).order('line_no');
+  var rows=q.data||[];
+  openModal('<h3>Request lines</h3>'+
+    '<p class="sub">Pulled from the quotation\'s outsource rows. The price shown is the '+
+    '<b>cost</b> entered in Modcraft, before the client markup — so it is a fair starting point '+
+    'for canvassing, not the client price.</p>'+
+    (rows.length?'<table><thead><tr><th>#</th><th>Item</th><th>Unit</th><th class="num">Qty</th>'+
+      '<th class="num">Est. price</th><th class="num">Amount</th></tr></thead><tbody>'+
+      rows.map(function(l){return '<tr><td>'+num(l.line_no)+'</td>'+
+        '<td>'+esc(l.item_name)+'<div class="mini">'+esc(l.notes||'')+'</div></td>'+
+        '<td>'+esc(l.unit||'')+'</td><td class="num">'+num(l.qty)+'</td>'+
+        '<td class="num">'+money(l.est_price)+'</td>'+
+        '<td class="num">'+money(l.est_amount)+'</td></tr>'}).join('')+'</tbody></table>'
+     :'<div class="empty">No lines.</div>')+
+    '<div class="row right" style="margin-top:14px"><button data-act="closeModal">Close</button></div>');
+}
+function submitPR(id){rpcPreview('adm_submit_pr',{p_pr_id:id},'Send for approval — review')}
+function decidePR(id,ok){
+  var reason=ok?null:(prompt('Reason for rejection (required):')||'');
+  if(!ok&&!reason.trim()){toast('A reason is required to reject.','err');return}
+  rpcPreview('adm_decide_pr',{p_pr_id:id,p_approve:ok,p_reason:reason},
+    (ok?'Approve':'Reject')+' purchase request — review');
+}
+
+/* ================= 3. SOURCING ================= */
+async function viewSourcing(){
+  el('view').innerHTML='<div class="empty">Loading suppliers…</div>';
+  var s=await supa.from('adm_suppliers').select('*').order('name').limit(400);
+  var rows=(s.data||[]);
+  var h='<div class="card"><h3>Supplier directory</h3>'+
+    '<p class="sub">Company profile, product list and pricing for each supplier, with a credibility '+
+    'status. Recommendations rank offers on price, lead time, rating and terms.</p>'+
+    '<div class="row" style="margin-bottom:10px">'+
+      (ME.caps.can_source?'<button class="primary" data-act="addSupplier"><i class="ti ti-plus"></i> Add supplier</button>':'')+
+      '<input id="supQ" placeholder="Search suppliers…" style="max-width:280px" oninput="filterSup()">'+
+    '</div>'+
+    (rows.length?'<table id="supTbl"><thead><tr><th>Supplier</th><th>Type</th><th>Categories</th>'+
+      '<th>Terms</th><th class="num">Lead</th><th>Status</th><th class="num">Rating</th><th></th></tr></thead><tbody>'+
+      rows.map(function(r){return '<tr data-n="'+esc((r.name||'').toLowerCase())+'">'+
+        '<td><b>'+esc(r.name)+'</b><div class="mini">'+esc(r.contact_person||'')+
+          (r.contact_phone?' · '+esc(r.contact_phone):'')+'</div></td>'+
+        '<td class="mini">'+esc(r.business_type||'—')+'</td>'+
+        '<td class="mini">'+esc((r.categories||[]).join(', ')||'—')+'</td>'+
+        '<td class="mini">'+esc(r.payment_terms||'—')+'</td>'+
+        '<td class="num">'+(r.lead_time_days!=null?r.lead_time_days+'d':'—')+'</td>'+
+        '<td>'+pillSup(r.status)+'</td>'+
+        '<td class="num">'+(r.rating!=null?Number(r.rating).toFixed(1):'—')+'</td>'+
+        '<td class="num"><button class="ghost" data-act="supProducts" data-id="'+esc(r.id)+'" data-name="'+esc(r.name)+'">Products</button></td>'+
+      '</tr>'}).join('')+'</tbody></table>'
+     :'<div class="empty">No suppliers yet. Add the ones you already buy from, '+
+      'then their prices become the first real cost data in the system.</div>')+
+    '</div>'+
+    '<div class="card"><div class="info"><b>Note on pricing.</b> Supplier costs live here in '+
+    '<code>adm_supplier_products</code> and are deliberately <b>never</b> written back into Modcraft\'s '+
+    'price database — that table feeds client quotations, and mixing selling prices with supplier '+
+    'costs in one table is exactly the kind of bug that is hard to unpick later.</div></div>';
+  el('view').innerHTML=h;
+}
+function pillSup(s){
+  var m={preferred:'p-green',accredited:'p-blue',prospect:'p-grey',
+         suspended:'p-amber',blacklisted:'p-red'};
+  return '<span class="pill '+(m[s]||'p-grey')+'">'+esc(s||'—')+'</span>';
+}
+function filterSup(){
+  var q=el('supQ').value.toLowerCase();
+  Array.prototype.forEach.call(document.querySelectorAll('#supTbl tbody tr'),function(tr){
+    tr.style.display=tr.getAttribute('data-n').indexOf(q)>=0?'':'none'});
+}
+function addSupplier(){
+  openModal('<h3>Add supplier</h3>'+
+    '<div class="grid g2">'+
+    '<div><label>Company name *</label><input id="sN"></div>'+
+    '<div><label>Business type</label><select id="sT"><option value="">—</option>'+
+      '<option>manufacturer</option><option>distributor</option><option>trader</option>'+
+      '<option>importer</option></select></div>'+
+    '<div><label>Contact person</label><input id="sC"></div>'+
+    '<div><label>Phone</label><input id="sP"></div>'+
+    '<div><label>Email</label><input id="sE"></div>'+
+    '<div><label>Website</label><input id="sW"></div>'+
+    '<div><label>Payment terms</label><input id="sPay" placeholder="COD / 30 days"></div>'+
+    '<div><label>Lead time (days)</label><input id="sL" type="number"></div>'+
+    '<div><label>Status</label><select id="sS"><option>prospect</option><option>accredited</option>'+
+      '<option>preferred</option></select></div>'+
+    '<div><label>Rating (0–5)</label><input id="sR" type="number" step="0.1" min="0" max="5"></div>'+
+    '</div>'+
+    '<label>Address</label><input id="sA">'+
+    '<label>Categories (comma separated)</label><input id="sCat" placeholder="boards, laminates, hardware">'+
+    '<div class="row right" style="margin-top:14px">'+
+      '<button class="ghost" data-act="closeModal">Cancel</button>'+
+      '<button class="primary" id="okSup">Save</button></div>');
+  el('okSup').onclick=async function(){
+    var name=el('sN').value.trim();
+    if(!name){toast('Company name is required.','err');return}
+    this.disabled=true;
+    var r=await supa.from('adm_suppliers').insert({
+      name:name,business_type:el('sT').value||null,contact_person:el('sC').value||null,
+      contact_phone:el('sP').value||null,contact_email:el('sE').value||null,
+      website:el('sW').value||null,payment_terms:el('sPay').value||null,
+      lead_time_days:parseInt(el('sL').value)||null,status:el('sS').value,
+      rating:parseFloat(el('sR').value)||null,address:el('sA').value||null,
+      categories:el('sCat').value?el('sCat').value.split(',').map(function(x){return x.trim()}).filter(Boolean):[],
+      source:'manual',created_by:ME.email});
+    closeModal();
+    if(r.error){toast(errMsg(r.error),'err');return}
+    toast('Supplier added.','ok');render();
+  };
+}
+async function supProducts(id,name){
+  var q=await supa.from('adm_supplier_products').select('*').eq('supplier_id',id).order('item_name');
+  var rows=q.data||[];
+  openModal('<h3>'+esc(name)+' — product list</h3>'+
+    (rows.length?'<table><thead><tr><th>Item</th><th>Brand</th><th>Unit</th>'+
+      '<th class="num">Price</th><th class="num">Lead</th><th>Captured</th></tr></thead><tbody>'+
+      rows.map(function(p){return '<tr><td>'+esc(p.item_name)+'<div class="mini">'+esc(p.spec||'')+'</div></td>'+
+        '<td class="mini">'+esc(p.brand||'—')+'</td><td>'+esc(p.unit||'')+'</td>'+
+        '<td class="num">'+money(p.price)+'</td>'+
+        '<td class="num">'+(p.lead_time_days!=null?p.lead_time_days+'d':'—')+'</td>'+
+        '<td class="mini">'+dt(p.captured_at)+'</td></tr>'}).join('')+'</tbody></table>'
+     :'<div class="empty">No products recorded for this supplier yet.</div>')+
+    '<div class="row right" style="margin-top:14px">'+
+    (ME.caps.can_source?'<button class="primary" data-act="addProduct" data-id="'+esc(id)+'">Add product</button>':'')+
+    '<button data-act="closeModal">Close</button></div>');
+}
+function addProduct(sid){
+  openModal('<h3>Add product</h3>'+
+    '<div class="grid g2">'+
+    '<div><label>Item name *</label><input id="pN"></div>'+
+    '<div><label>Brand</label><input id="pB"></div>'+
+    '<div><label>Unit</label><input id="pU" placeholder="pc / sheet / set"></div>'+
+    '<div><label>Price</label><input id="pP" type="number" step="0.0001"></div>'+
+    '<div><label>Lead time (days)</label><input id="pL" type="number"></div>'+
+    '<div><label>Price valid until</label><input id="pV" type="date"></div></div>'+
+    '<label>Spec / notes</label><input id="pS">'+
+    '<label>Source URL (if from an online store)</label><input id="pURL">'+
+    '<div class="row right" style="margin-top:14px">'+
+      '<button class="ghost" data-act="closeModal">Cancel</button>'+
+      '<button class="primary" id="okP">Save</button></div>');
+  el('okP').onclick=async function(){
+    var n=el('pN').value.trim();
+    if(!n){toast('Item name is required.','err');return}
+    this.disabled=true;
+    var r=await supa.from('adm_supplier_products').insert({supplier_id:sid,item_name:n,
+      brand:el('pB').value||null,unit:el('pU').value||null,
+      price:parseFloat(el('pP').value)||null,lead_time_days:parseInt(el('pL').value)||null,
+      price_valid_until:el('pV').value||null,spec:el('pS').value||null,
+      source_url:el('pURL').value||null});
+    closeModal();
+    if(r.error){toast(errMsg(r.error),'err');return}
+    toast('Product added.','ok');
+  };
+}
+
+/* ================= 4. MATERIAL REQUESTS ================= */
+async function viewMR(){
+  el('view').innerHTML='<div class="empty">Loading material requests…</div>';
+  var q=await supa.from('adm_material_requests').select('*')
+    .order('created_at',{ascending:false}).limit(200);
+  var rows=q.data||[];
+  el('view').innerHTML='<div class="card"><h3>Material Requests</h3>'+
+    '<p class="sub">A release splits into two streams: <b>warehouse</b> — stocked materials to be '+
+    'withdrawn, and <b>purchase</b> — outsourced and made-to-order items to be bought. '+
+    'Made-to-order lead time is what production plans the start date around.</p>'+
+    (rows.length?'<table><thead><tr><th>MR</th><th>Stream</th><th>Quotation</th><th>Job Order</th>'+
+      '<th>Status</th><th>Authorized</th><th></th></tr></thead><tbody>'+
+      rows.map(function(r){return '<tr>'+
+        '<td><b>'+esc(r.mr_no||'—')+'</b></td>'+
+        '<td>'+(r.stream==='warehouse'
+          ?'<span class="pill p-teal">warehouse</span>':'<span class="pill p-amber">purchase</span>')+'</td>'+
+        '<td>'+esc(r.quotation_serial||'—')+'</td>'+
+        '<td class="mini">'+esc(r.pmes_job_code||'—')+'</td>'+
+        '<td>'+pill(r.status)+'</td>'+
+        '<td class="mini">'+(r.authorized_by?esc(r.authorized_by)+'<br>'+dt(r.authorized_at):'—')+'</td>'+
+        '<td class="num"><button class="ghost" data-act="mrLines" data-id="'+esc(r.id)+'">Lines</button></td>'+
+      '</tr>'}).join('')+'</tbody></table>'
+     :'<div class="empty">No material requests yet. They are created when you build them on a gate.</div>')+
+    '</div>';
+}
+async function mrLines(id){
+  var q=await supa.from('adm_mr_lines').select('*').eq('mr_id',id).order('line_no');
+  var rows=q.data||[];
+  openModal('<h3>Material request lines</h3>'+
+    (rows.length?'<table><thead><tr><th>#</th><th>Item</th><th>Unit</th><th class="num">Qty</th>'+
+      '<th>Sourcing</th><th class="num">Lead</th></tr></thead><tbody>'+
+      rows.map(function(l){return '<tr><td>'+num(l.line_no)+'</td>'+
+        '<td>'+esc(l.item_name)+'<div class="mini">'+esc(l.area||'')+'</div></td>'+
+        '<td>'+esc(l.unit||'')+'</td><td class="num">'+num(l.qty)+'</td>'+
+        '<td>'+pill(l.sourcing)+'</td>'+
+        '<td class="num">'+(l.mto_lead_days!=null?l.mto_lead_days+'d':'—')+'</td></tr>'}).join('')+
+      '</tbody></table>':'<div class="empty">No lines.</div>')+
+    '<div class="row right" style="margin-top:14px"><button data-act="closeModal">Close</button></div>');
+}
+
+/* ================= 5. DASHBOARD ================= */
+async function viewDash(){
+  el('view').innerHTML='<div class="empty">Building dashboard…</div>';
+  var g=await supa.from('adm_release_gates').select('*');
+  var p=await supa.from('adm_purchase_requests').select('*');
+  var gates=g.data||[], prs=p.data||[];
+  var due=gates.reduce(function(a,x){return a+(Number(x.amount_due)||0)},0);
+  var paid=gates.reduce(function(a,x){return a+(Number(x.amount_paid)||0)},0);
+  var bal=due-paid;
+  var rel=gates.filter(function(x){return x.gate_status==='released'});
+  var pend=gates.filter(function(x){return x.gate_status==='pending_payment'});
+  var vou=gates.filter(function(x){return x.gate_status==='vouched'});
+  var prOpen=prs.filter(function(x){return ['canvassing','draft','submitted'].indexOf(x.status)>=0});
+  var prVal=prs.filter(function(x){return x.status==='approved'})
+    .reduce(function(a,x){return a+(Number(x.est_total)||0)},0);
+
+  // Average days from gate opened to released — the real cash-to-production cycle.
+  var cyc=rel.filter(function(x){return x.released_at&&x.created_at})
+    .map(function(x){return (new Date(x.released_at)-new Date(x.created_at))/86400000});
+  var avgCyc=cyc.length?(cyc.reduce(function(a,b){return a+b},0)/cyc.length):null;
+
+  el('view').innerHTML=
+    '<div class="card"><h3>Dashboard &amp; KPI</h3>'+
+    '<p class="sub">Figures below cover only what this app manages. Each gate is shown on its own — '+
+    'quotation amounts are never merged into a single combined figure.</p>'+
+    '<div class="grid g4">'+
+      kpi('Contract value under gate',money(due),gates.length+' gate(s)')+
+      kpi('Collected',money(paid),due>0?(paid/due*100).toFixed(1)+'% of contract':'')+
+      kpi('Outstanding balance',money(bal),'across all open gates')+
+      kpi('Released to production',rel.length,'Job Orders unlocked')+
+    '</div><div class="grid g4" style="margin-top:12px">'+
+      kpi('Awaiting payment',pend.length,'blocked from production')+
+      kpi('Vouched (on credit)',vou.length,'released without payment')+
+      kpi('Open purchase requests',prOpen.length,'canvassing or awaiting approval')+
+      kpi('Approved PR value',money(prVal),'committed to suppliers')+
+    '</div><div class="grid g4" style="margin-top:12px">'+
+      kpi('Avg. gate → release',avgCyc!=null?avgCyc.toFixed(1)+' days':'—','cash-to-production cycle')+
+      kpi('Auto-generated PRs',prs.filter(function(x){return x.auto_generated}).length,'from outsource rows')+
+      kpi('Suppliers on file',(CACHE.supCount!=null?CACHE.supCount:'—'),'sourcing base')+
+      kpi('Jobs on credit exposure',money(vou.reduce(function(a,x){return a+(Number(x.balance)||0)},0)),'unpaid but released')+
+    '</div></div>'+
+    '<div class="card"><h3>Gate status breakdown</h3>'+
+      (gates.length?'<table><thead><tr><th>Quotation</th><th>Status</th><th class="num">Contract</th>'+
+      '<th class="num">Paid</th><th class="num">Balance</th><th>Job Order</th></tr></thead><tbody>'+
+      gates.sort(function(a,b){return (b.amount_due||0)-(a.amount_due||0)}).map(function(x){
+        return '<tr><td>'+esc(x.quotation_serial)+'</td><td>'+pill(x.gate_status)+'</td>'+
+        '<td class="num">'+money(x.amount_due)+'</td><td class="num">'+money(x.amount_paid)+'</td>'+
+        '<td class="num">'+money(x.balance)+'</td>'+
+        '<td class="mini">'+esc(x.pmes_job_code||'—')+'</td></tr>'}).join('')+'</tbody></table>'
+       :'<div class="empty">No gates yet.</div>')+'</div>';
+  supa.from('adm_suppliers').select('id',{count:'exact',head:true}).then(function(r){
+    CACHE.supCount=r.count});
+}
+
+/* ================= 6. PROVISIONS ================= */
+async function viewProv(){
+  var d=await supa.from('adm_deliveries').select('*').order('scheduled_at').limit(100);
+  var rr=await supa.from('adm_room_reservations').select('*').order('starts_at').limit(50);
+  var hr=await supa.from('adm_hris_feed').select('*').order('received_at',{ascending:false}).limit(50);
+  el('view').innerHTML=
+    '<div class="card"><h3>Delivery schedule</h3>'+
+      '<p class="sub">Inbound supplier deliveries and outbound shipments.</p>'+
+      ((d.data||[]).length?'<table><thead><tr><th>When</th><th>Description</th><th>Kind</th>'+
+        '<th>Truck</th><th>Status</th></tr></thead><tbody>'+
+        d.data.map(function(x){return '<tr><td>'+dt(x.scheduled_at)+'</td>'+
+          '<td>'+esc(x.description||'')+'<div class="mini">'+esc(x.quotation_serial||'')+'</div></td>'+
+          '<td class="mini">'+esc(x.kind)+'</td><td class="mini">'+esc(x.truck||'—')+'</td>'+
+          '<td>'+pill(x.status)+'</td></tr>'}).join('')+'</tbody></table>'
+       :'<div class="empty">No deliveries scheduled yet.</div>')+'</div>'+
+
+    '<div class="card"><h3>HRIS <span class="pill p-amber">provision</span></h3>'+
+      '<p class="sub">HRIS is not built yet. This is the landing table it will feed — attendance, '+
+      'leave, schedules. Nothing here is live; the table exists so connecting HRIS later is a '+
+      'wiring job, not a redesign.</p>'+
+      ((hr.data||[]).length?'<table><thead><tr><th>Type</th><th>Employee</th><th>Date</th></tr></thead><tbody>'+
+        hr.data.map(function(x){return '<tr><td>'+esc(x.feed_type||'')+'</td>'+
+          '<td>'+esc(x.employee||'')+'</td><td>'+dt(x.ref_date)+'</td></tr>'}).join('')+'</tbody></table>'
+       :'<div class="empty">No HRIS feed received. Expected: attendance, leave schedule, roster.</div>')+
+      '</div>'+
+
+    '<div class="card"><h3>Room reservation <span class="pill p-amber">provision</span></h3>'+
+      '<p class="sub">The room booking system is not working yet. Same idea — the table is ready '+
+      'for it.</p>'+
+      ((rr.data||[]).length?'<table><thead><tr><th>Room</th><th>Title</th><th>From</th><th>To</th>'+
+        '<th>Status</th></tr></thead><tbody>'+
+        rr.data.map(function(x){return '<tr><td>'+esc(x.room)+'</td><td>'+esc(x.title||'')+'</td>'+
+          '<td>'+dt(x.starts_at)+'</td><td>'+dt(x.ends_at)+'</td>'+
+          '<td>'+pill(x.status)+'</td></tr>'}).join('')+'</tbody></table>'
+       :'<div class="empty">No reservations. Not yet connected.</div>')+'</div>'+
+
+    '<div class="card"><h3>Outsource &amp; hardware reference</h3>'+
+      '<div class="info">Supplier products recorded here become the reference other apps can pull '+
+      'from for outsourced materials and hardware costs. This is the first real supplier-cost data '+
+      'in the system — Modcraft currently assumes a flat 30% material margin because no cost data '+
+      'existed.</div></div>';
+}
+
+/* ---------- boot ---------- */
+supa.auth.onAuthStateChange(function(){refreshUser()});
+(async function(){
+  var c=await supa.from('adm_settings').select('*').eq('key','CONFIG').maybeSingle();
+  CACHE.cfg=c.data;
+  refreshUser();
+})();
+</script>
+</body>
+</html>
