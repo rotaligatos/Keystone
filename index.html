@@ -183,7 +183,7 @@ var supa=window.supabase.createClient(SUPA_URL,SUPA_ANON_KEY,{
   auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,flowType:'pkce'}});
 
 var ME={email:null,name:null,role:null,company:null,caps:{}};
-var TAB='queue';
+var TAB='review';
 var CACHE={};
 
 /* ---------- small helpers ---------- */
@@ -228,6 +228,20 @@ var ACTIONS={
   addProduct:function(d){addProduct(d.id)},
   mrLines:function(d){mrLines(d.id)},
   addSupplier:function(){addSupplier()},
+  openPR:function(d){openPR(d.id)},
+  signPR:function(d){signPR(d.id)},
+  consolidatePR:function(d){consolidatePR(d.id)},
+  addQuotation:function(d){addQuotation(d.id)},
+  editLine:function(d){editLine(d.id,d.pr)},
+  delLine:function(d){delLine(d.id,d.pr)},
+  apprPR:function(d){apprPR(d.id,true)},
+  rejPR:function(d){apprPR(d.id,false)},
+  apprPO:function(d){apprPO(d.id,true)},
+  rejPO:function(d){apprPO(d.id,false)},
+  newPO:function(d){newPO(d.id)},
+  openPO:function(d){openPO(d.id)},
+  submitPO:function(d){submitPO(d.id)},
+  issuePO:function(d){issuePO(d.id)},
   closeModal:function(){closeModal()},
   reload:function(){location.reload()}
 };
@@ -243,8 +257,9 @@ document.addEventListener('click',function(e){
 var PILL={
   pending_payment:'p-amber', paid:'p-green', vouched:'p-teal',
   released:'p-blue', cancelled:'p-grey',
-  draft:'p-grey', canvassing:'p-amber', submitted:'p-blue',
-  approved:'p-green', rejected:'p-red', ordered:'p-teal', closed:'p-grey',
+  draft:'p-grey', pending_manager:'p-amber', pending_hpo:'p-amber',
+  pending_md:'p-amber', approved:'p-green', rejected:'p-red',
+  issued:'p-teal', ordered:'p-teal', closed:'p-grey', received:'p-green',
   authorized:'p-green', issued:'p-teal', partially_issued:'p-amber'
 };
 function pill(s){if(!s)return '<span class="pill p-grey">—</span>';
@@ -297,8 +312,13 @@ async function _refreshUser(){
   }
   var cp=await supa.from('adm_user_caps').select('*').eq('email',ME.email).maybeSingle();
   ME.caps=cp.data||{};
+  // Admin tier gets the operational capabilities, but NOT the approver roles.
+  // Rommel and Kathleen are both Admin tier; if being an Admin granted the
+  // Managing Director role, Rommel could approve his own big order alone and
+  // that control would be meaningless. Approver roles come only from the caps row.
   if(ME.role==='Admin'||ME.role==='Director'){
-    ME.caps={can_request:1,can_approve:1,can_vouch:1,can_release:1,can_source:1,adminTier:1};
+    ME.caps=Object.assign({},ME.caps,
+      {can_request:1,can_approve:1,can_vouch:1,can_release:1,can_source:1,adminTier:1});
   }
   el('who').innerHTML='<b>'+esc(ME.name||ME.email)+'</b><br>'+
     esc(ME.role||'no role')+(ME.company?' · '+esc(ME.company):'');
@@ -338,8 +358,10 @@ async function rpcPreview(fn,args,title,onDone){
 
 /* ================= TABS ================= */
 var TABS=[
+  {k:'review', t:'My Requests',      i:'ti-clipboard-check'},
+  {k:'appr',   t:'Approvals',        i:'ti-writing-sign'},
+  {k:'po',     t:'Purchase Orders',  i:'ti-file-dollar'},
   {k:'queue',  t:'Release Queue',    i:'ti-lock-open'},
-  {k:'pr',     t:'Purchase Requests',i:'ti-file-invoice'},
   {k:'src',    t:'Sourcing',         i:'ti-building-store'},
   {k:'mr',     t:'Material Requests',i:'ti-package'},
   {k:'dash',   t:'Dashboard & KPI',  i:'ti-chart-bar'},
@@ -358,7 +380,8 @@ function render(){
     '<div class="card"><h3>Sign in required</h3>'+
     '<p class="sub">Use the same Google account you use for Modcraft. '+
     'What you can see and do here follows your Modcraft role.</p></div>';return}
-  var fn = TAB==='queue'?viewQueue : TAB==='pr'?viewPR : TAB==='src'?viewSourcing
+  var fn = TAB==='review'?viewReview : TAB==='appr'?viewApprovals : TAB==='po'?viewPO
+         : TAB==='queue'?viewQueue : TAB==='src'?viewSourcing
          : TAB==='mr'?viewMR : TAB==='dash'?viewDash : viewProv;
   // A screen that fails must say why. Silence here reads as "the app is broken".
   Promise.resolve().then(fn).catch(function(e){
@@ -571,66 +594,339 @@ function genPR(serial){
     'Generate purchase request from outsource items');
 }
 
-/* ================= 2. PURCHASE REQUESTS ================= */
-async function viewPR(){
-  el('view').innerHTML='<div class="empty">Loading purchase requests…</div>';
+/* ================= MY REQUESTS (user review & combine) =================
+   The outsource materials land here from a LOCKED quotation. Everything the
+   user does on this page happens in KEYSTONE only — the quotation is never
+   written back to, so the project total cannot move. Once signed, the lines
+   are frozen and the approval chain begins.
+   ====================================================================== */
+async function viewReview(){
+  el('view').innerHTML='<div class="empty">Loading your requests…</div>';
   var q=await supa.from('adm_purchase_requests').select('*')
     .order('created_at',{ascending:false}).limit(200);
-  if(q.error){el('view').innerHTML='<div class="card"><div class="warn">'+esc(errMsg(q.error))+'</div></div>';return}
+  if(q.error)throw q.error;
   var rows=q.data||[];
-  var h='<div class="card"><h3>Purchase Requests</h3>'+
-    '<p class="sub">Generated automatically from the <b>outsource materials and hardware</b> on a '+
-    'quotation — the items Modcraft does not stock and must buy in. A request stays in '+
-    '<b>canvassing</b> until the Final Quotation is client-approved; only then can it go to a superior '+
-    'for approval.</p>'+
-    (rows.length?'<table><thead><tr><th>PR</th><th>Quotation</th><th>Title</th>'+
-      '<th class="num">Est. total</th><th>Status</th><th>Requested by</th><th></th></tr></thead><tbody>'+
-      rows.map(function(r){
-        var acts='';
-        if(r.status==='canvassing'||r.status==='draft'){
-          acts+='<button data-act="submitPR" data-id="'+esc(r.id)+'">Send for approval</button> ';
-        }
-        if(r.status==='submitted'&&ME.caps.can_approve){
-          acts+='<button class="primary" data-act="approvePR" data-id="'+esc(r.id)+'">Approve</button> '+
-                '<button class="danger" data-act="rejectPR" data-id="'+esc(r.id)+'">Reject</button>';
-        }
-        return '<tr>'+
-          '<td><b>'+esc(r.pr_no||'—')+'</b>'+(r.auto_generated?'<div class="mini">auto · '+esc(r.source_stage||'')+'</div>':'')+'</td>'+
-          '<td>'+esc(r.quotation_serial||'—')+'</td>'+
-          '<td>'+esc(r.title||'')+'</td>'+
-          '<td class="num">'+money(r.est_total)+'</td>'+
-          '<td>'+pill(r.status)+'</td>'+
-          '<td class="mini">'+esc(r.requested_by||'')+'</td>'+
-          '<td class="num" style="white-space:nowrap">'+
-            '<button class="ghost" data-act="prLines" data-id="'+esc(r.id)+'">Lines</button> '+acts+'</td></tr>'}).join('')+
-      '</tbody></table>':'<div class="empty">No purchase requests yet. Generate one from the Release Queue.</div>')+
-    '</div>';
+  var mine=rows.filter(function(r){return (r.requested_by||'').toLowerCase()===ME.email});
+  var drafts=mine.filter(function(r){return r.status==='draft'});
+  var moving=mine.filter(function(r){return ['pending_manager','pending_hpo'].indexOf(r.status)>=0});
+  var done=mine.filter(function(r){return ['approved','ordered','closed','rejected'].indexOf(r.status)>=0});
+
+  var h='<div class="card"><h3>My Purchase Requests</h3>'+
+    '<p class="sub">Outsource materials and hardware pulled from approved quotations. '+
+    'Review them here — adjust quantities, merge duplicate items, pull in other jobs, '+
+    'drop what you don\'t need — then sign. <b>Nothing you do here touches the quotation</b>, '+
+    'so a locked project total can never change.</p>'+
+    '<div class="grid g4">'+
+      kpi('Drafts to review',drafts.length,'waiting for you')+
+      kpi('Awaiting approval',moving.length,'with Manager or Plant Ops')+
+      kpi('Approved',mine.filter(function(r){return ['approved','ordered'].indexOf(r.status)>=0}).length,'ready to purchase')+
+      kpi('Total value drafted',money(drafts.reduce(function(a,r){return a+(+r.est_total||0)},0)),'')+
+    '</div></div>';
+
+  h+=prTable('Drafts — yours to review and sign',drafts,true);
+  h+=prTable('Sent for approval',moving,false);
+  h+=prTable('Finished',done,false);
+
+  if(!mine.length){
+    h+='<div class="card"><div class="info">You have no purchase requests yet. '+
+       'Go to <b>Release Queue</b> and press <b>Generate PR</b> on a quotation that has '+
+       'outsource materials.</div></div>';
+  }
   el('view').innerHTML=h;
 }
-async function prLines(id){
-  var q=await supa.from('adm_pr_lines').select('*').eq('pr_id',id).order('line_no');
-  var rows=q.data||[];
-  openModal('<h3>Request lines</h3>'+
-    '<p class="sub">Pulled from the quotation\'s outsource rows. The price shown is the '+
-    '<b>cost</b> entered in Modcraft, before the client markup — so it is a fair starting point '+
-    'for canvassing, not the client price.</p>'+
-    (rows.length?'<table><thead><tr><th>#</th><th>Item</th><th>Unit</th><th class="num">Qty</th>'+
-      '<th class="num">Est. price</th><th class="num">Amount</th></tr></thead><tbody>'+
-      rows.map(function(l){return '<tr><td>'+num(l.line_no)+'</td>'+
-        '<td>'+esc(l.item_name)+'<div class="mini">'+esc(l.notes||'')+'</div></td>'+
-        '<td>'+esc(l.unit||'')+'</td><td class="num">'+num(l.qty)+'</td>'+
-        '<td class="num">'+money(l.est_price)+'</td>'+
-        '<td class="num">'+money(l.est_amount)+'</td></tr>'}).join('')+'</tbody></table>'
-     :'<div class="empty">No lines.</div>')+
-    '<div class="row right" style="margin-top:14px"><button data-act="closeModal">Close</button></div>');
+function prTable(title,rows,isDraft){
+  if(!rows.length)return '';
+  return '<div class="card"><h3>'+esc(title)+'</h3><table><thead><tr>'+
+    '<th>Request</th><th>Job</th><th>Title</th><th class="num">Lines</th>'+
+    '<th class="num">Value</th><th>Status</th><th></th></tr></thead><tbody>'+
+    rows.map(function(r){
+      return '<tr><td><b>'+esc(r.pr_no||'—')+'</b>'+
+        (r.auto_generated?'<div class="mini">auto · '+esc(r.source_stage||'')+'</div>':'')+'</td>'+
+        '<td>'+esc(r.quotation_serial||'combined')+'</td>'+
+        '<td>'+esc(r.title||'')+'</td>'+
+        '<td class="num" id="c_'+esc(r.id)+'">·</td>'+
+        '<td class="num">'+money(r.est_total)+'</td>'+
+        '<td>'+pill(r.status)+
+          (r.status==='rejected'&&r.reject_reason?'<div class="mini">'+esc(r.reject_reason)+'</div>':'')+
+        '</td>'+
+        '<td class="num"><button class="'+(isDraft?'primary':'ghost')+
+          '" data-act="openPR" data-id="'+esc(r.id)+'">'+
+          (isDraft?'Review &amp; sign':'View')+'</button></td></tr>';
+    }).join('')+'</tbody></table></div>';
 }
-function submitPR(id){rpcPreview('adm_submit_pr',{p_pr_id:id},'Send for approval — review')}
-function decidePR(id,ok){
+
+/* --- the review sheet ---------------------------------------------------- */
+async function openPR(id){
+  var pr=await supa.from('adm_purchase_requests').select('*').eq('id',id).maybeSingle();
+  var ln=await supa.from('adm_pr_lines').select('*').eq('pr_id',id).order('line_no');
+  var p=pr.data||{}, rows=ln.data||[];
+  var draft=(p.status==='draft');
+  var srcs={}; rows.forEach(function(l){if(l.src_ref)srcs[l.src_ref]=1});
+  var jobs=Object.keys(srcs);
+
+  openModal('<h3>'+esc(p.pr_no||'Request')+' '+pill(p.status)+'</h3>'+
+    '<p class="sub">'+esc(p.title||'')+'</p>'+
+    (draft
+      ? '<div class="info">Change anything you need, then <b>Sign &amp; send</b>. After signing, '+
+        'the lines are locked — that is what the Manager and Head of Plant Operations approve.</div>'
+      : '<div class="warn">This request is <b>'+esc(String(p.status).replace(/_/g,' '))+
+        '</b>. Lines are locked and cannot be edited.</div>')+
+    (jobs.length>1?'<div class="info">Combined request covering '+jobs.length+
+      ' jobs: '+esc(jobs.join(', '))+'</div>':'')+
+    (draft?'<div class="row" style="margin:10px 0">'+
+      '<button data-act="consolidatePR" data-id="'+esc(id)+'"><i class="ti ti-arrows-join"></i> Merge duplicate items</button>'+
+      '<button data-act="addQuotation" data-id="'+esc(id)+'"><i class="ti ti-plus"></i> Add another job</button>'+
+      '</div>':'')+
+    '<table><thead><tr><th>#</th><th>Item</th><th>Unit</th><th class="num">Qty</th>'+
+    '<th class="num">Est. price</th><th class="num">Amount</th>'+(draft?'<th></th>':'')+
+    '</tr></thead><tbody>'+
+    (rows.length?rows.map(function(l){
+      return '<tr><td>'+num(l.line_no)+'</td>'+
+        '<td>'+esc(l.item_name)+'<div class="mini">'+esc(l.notes||'')+'</div></td>'+
+        '<td>'+esc(l.unit||'')+'</td>'+
+        '<td class="num">'+num(l.qty)+'</td>'+
+        '<td class="num">'+money(l.est_price)+'</td>'+
+        '<td class="num">'+money(l.est_amount)+'</td>'+
+        (draft?'<td class="num" style="white-space:nowrap">'+
+          '<button class="ghost" data-act="editLine" data-id="'+esc(l.id)+'" data-pr="'+esc(id)+'">Edit</button> '+
+          '<button class="ghost" data-act="delLine" data-id="'+esc(l.id)+'" data-pr="'+esc(id)+'">Remove</button></td>':'')+
+        '</tr>'}).join('')
+      :'<tr><td colspan="7"><div class="empty">No lines.</div></td></tr>')+
+    '</tbody></table>'+
+    '<div class="row right" style="margin-top:12px"><b>Total '+money(p.est_total)+'</b></div>'+
+    (p.signed_by?'<div class="mini" style="margin-top:8px">Signed by '+esc(p.signed_by)+' on '+dt(p.signed_at)+'</div>':'')+
+    (p.manager_approved_by?'<div class="mini">Manager approved by '+esc(p.manager_approved_by)+' on '+dt(p.manager_approved_at)+'</div>':'')+
+    (p.hpo_approved_by?'<div class="mini">Head of Plant Ops approved by '+esc(p.hpo_approved_by)+' on '+dt(p.hpo_approved_at)+'</div>':'')+
+    '<div class="row right" style="margin-top:14px">'+
+      '<button data-act="closeModal">Close</button>'+
+      (draft&&rows.length?'<button class="primary" data-act="signPR" data-id="'+esc(id)+'">'+
+        '<i class="ti ti-writing-sign"></i> Sign &amp; send to Manager</button>':'')+
+    '</div>');
+}
+function signPR(id){closeModal();rpcPreview('adm_pr_sign',{p_pr_id:id},'Sign this request — review')}
+function consolidatePR(id){closeModal();rpcPreview('adm_pr_consolidate',{p_pr_id:id},'Merge duplicate items — review')}
+function addQuotation(id){
+  var ser=prompt('Quotation number to add into this request (e.g. QT-W00000132):');
+  if(!ser)return; closeModal();
+  rpcPreview('adm_pr_add_from_quotation',{p_pr_id:id,p_serial:ser.trim()},'Add another job — review');
+}
+async function editLine(lineId,prId){
+  var q=await supa.from('adm_pr_lines').select('*').eq('id',lineId).maybeSingle();
+  var l=q.data||{};
+  openModal('<h3>Edit line</h3><p class="sub">'+esc(l.item_name||'')+'</p>'+
+    '<div class="grid g2">'+
+    '<div><label>Quantity</label><input id="eQ" type="number" step="any" value="'+(l.qty||0)+'"></div>'+
+    '<div><label>Unit</label><input id="eU" value="'+esc(l.unit||'')+'"></div>'+
+    '<div><label>Estimated price</label><input id="eP" type="number" step="any" value="'+(l.est_price||0)+'"></div>'+
+    '<div><label>Item name</label><input id="eN" value="'+esc(l.item_name||'')+'"></div></div>'+
+    '<label>Note</label><input id="eNote" value="'+esc(l.notes||'')+'">'+
+    '<div class="row right" style="margin-top:14px">'+
+      '<button data-act="closeModal">Cancel</button>'+
+      '<button class="primary" id="okLine">Save</button></div>');
+  el('okLine').onclick=async function(){
+    var qy=parseFloat(el('eQ').value);
+    if(!(qy>0)){toast('Quantity must be greater than zero. Use Remove to drop the line.','err');return}
+    this.disabled=true;
+    var r=await supa.from('adm_pr_lines').update({
+      qty:qy, unit:el('eU').value||null, est_price:parseFloat(el('eP').value)||null,
+      item_name:el('eN').value.trim()||l.item_name, notes:el('eNote').value||null}).eq('id',lineId);
+    closeModal();
+    if(r.error){toast(errMsg(r.error),'err');return}
+    toast('Line updated.','ok'); openPR(prId); render();
+  };
+}
+async function delLine(lineId,prId){
+  if(!confirm('Remove this line from the request?'))return;
+  var r=await supa.from('adm_pr_lines').delete().eq('id',lineId);
+  if(r.error){toast(errMsg(r.error),'err');return}
+  toast('Line removed.','ok'); openPR(prId); render();
+}
+
+/* ================= APPROVALS ================= */
+async function viewApprovals(){
+  el('view').innerHTML='<div class="empty">Loading approvals…</div>';
+  var pq=await supa.from('adm_purchase_requests').select('*')
+    .in('status',['pending_manager','pending_hpo']).order('signed_at');
+  var oq=await supa.from('adm_purchase_orders').select('*')
+    .in('status',['pending_hpo','pending_md']).order('created_at');
+  if(pq.error)throw pq.error;
+  var prs=pq.data||[], pos=oq.data||[];
+  var isMgr=!!ME.caps.is_manager_approver, isHpo=!!ME.caps.is_hpo_approver, isMd=!!ME.caps.is_md_approver;
+
+  var mineP=prs.filter(function(r){
+    return (r.status==='pending_manager'&&isMgr)||(r.status==='pending_hpo'&&isHpo)});
+  var mineO=pos.filter(function(o){
+    return (o.status==='pending_hpo'&&isHpo)||(o.status==='pending_md'&&isMd)});
+
+  var role=[isMgr?'Manager':null,isHpo?'Head of Plant Operations':null,
+            isMd?'Managing Director':null].filter(Boolean).join(' · ')||'no approval role';
+
+  var h='<div class="card"><h3>Approvals</h3>'+
+    '<p class="sub">You are signed in as <b>'+esc(role)+'</b>. '+
+    'You cannot approve a request you raised or signed yourself.</p>'+
+    '<div class="grid g4">'+
+      kpi('Requests for you',mineP.length,'awaiting your decision')+
+      kpi('Purchase orders for you',mineO.length,'awaiting your decision')+
+      kpi('All requests in flight',prs.length,'across the company')+
+      kpi('All orders in flight',pos.length,'across the company')+
+    '</div></div>';
+
+  h+='<div class="card"><h3>Purchase requests</h3>'+
+    (mineP.length?'<table><thead><tr><th>Request</th><th>Job</th><th>Raised by</th>'+
+      '<th class="num">Value</th><th>Stage</th><th></th></tr></thead><tbody>'+
+      mineP.map(function(r){
+        var own=((r.requested_by||'').toLowerCase()===ME.email)||((r.signed_by||'').toLowerCase()===ME.email);
+        return '<tr><td><b>'+esc(r.pr_no)+'</b></td>'+
+          '<td>'+esc(r.quotation_serial||'combined')+'</td>'+
+          '<td class="mini">'+esc(r.signed_by||r.requested_by||'')+'</td>'+
+          '<td class="num">'+money(r.est_total)+'</td>'+
+          '<td>'+pill(r.status)+'</td>'+
+          '<td class="num" style="white-space:nowrap">'+
+            '<button class="ghost" data-act="openPR" data-id="'+esc(r.id)+'">Lines</button> '+
+            (own?'<span class="mini">your own request</span>'
+                :'<button class="primary" data-act="apprPR" data-id="'+esc(r.id)+'">Approve</button> '+
+                 '<button class="danger" data-act="rejPR" data-id="'+esc(r.id)+'">Reject</button>')+
+          '</td></tr>'}).join('')+'</tbody></table>'
+     :'<div class="empty">Nothing waiting for your decision.</div>')+'</div>';
+
+  h+='<div class="card"><h3>Purchase orders</h3>'+
+    '<p class="sub">A purchase order of <b>₱20,000 or more</b> needs the Managing Director '+
+    'as well as the Head of Plant Operations.</p>'+
+    (mineO.length?'<table><thead><tr><th>Order</th><th class="num">Value</th><th>Stage</th>'+
+      '<th>Notes</th><th></th></tr></thead><tbody>'+
+      mineO.map(function(o){
+        return '<tr><td><b>'+esc(o.po_no||'—')+'</b></td>'+
+          '<td class="num">'+money(o.total)+'</td>'+
+          '<td>'+pill(o.status)+'</td>'+
+          '<td>'+(o.split_flag?'<span class="pill p-amber">split</span> <span class="mini">'+
+                  esc(o.split_note||'')+'</span>':'<span class="mini">—</span>')+'</td>'+
+          '<td class="num" style="white-space:nowrap">'+
+            '<button class="ghost" data-act="openPO" data-id="'+esc(o.id)+'">Lines</button> '+
+            '<button class="primary" data-act="apprPO" data-id="'+esc(o.id)+'">Approve</button> '+
+            '<button class="danger" data-act="rejPO" data-id="'+esc(o.id)+'">Reject</button>'+
+          '</td></tr>'}).join('')+'</tbody></table>'
+     :'<div class="empty">Nothing waiting for your decision.</div>')+'</div>';
+  el('view').innerHTML=h;
+}
+function apprPR(id,ok){
   var reason=ok?null:(prompt('Reason for rejection (required):')||'');
   if(!ok&&!reason.trim()){toast('A reason is required to reject.','err');return}
-  rpcPreview('adm_decide_pr',{p_pr_id:id,p_approve:ok,p_reason:reason},
+  rpcPreview('adm_pr_approve',{p_pr_id:id,p_approve:ok,p_reason:reason},
     (ok?'Approve':'Reject')+' purchase request — review');
 }
+function apprPO(id,ok){
+  var reason=ok?null:(prompt('Reason for rejection (required):')||'');
+  if(!ok&&!reason.trim()){toast('A reason is required to reject.','err');return}
+  rpcPreview('adm_po_approve',{p_po_id:id,p_approve:ok,p_reason:reason},
+    (ok?'Approve':'Reject')+' purchase order — review');
+}
+
+/* ================= PURCHASE ORDERS ================= */
+async function viewPO(){
+  el('view').innerHTML='<div class="empty">Loading purchase orders…</div>';
+  var oq=await supa.from('adm_purchase_orders').select('*').order('created_at',{ascending:false}).limit(200);
+  var pq=await supa.from('adm_purchase_requests').select('id,pr_no,est_total,company,status,quotation_serial')
+    .in('status',['approved','ordered']);
+  if(oq.error)throw oq.error;
+  var pos=oq.data||[], readyPRs=pq.data||[];
+
+  var h='<div class="card"><h3>Purchase Orders</h3>'+
+    '<p class="sub">Raised against a fully approved request. Each order goes to the Head of '+
+    'Plant Operations; <b>₱20,000 and above</b> also needs the Managing Director. '+
+    'Purchasing is blocked until the client has approved the quotation.</p>'+
+    (readyPRs.length?'<div class="row" style="margin-bottom:10px">'+
+      readyPRs.map(function(p){return '<button data-act="newPO" data-id="'+esc(p.id)+'">'+
+        '<i class="ti ti-plus"></i> New PO from '+esc(p.pr_no)+'</button>'}).join('')+'</div>'
+     :'<div class="info">No approved purchase requests yet. A request must clear the Manager '+
+      'and the Head of Plant Operations before an order can be raised.</div>')+
+    (pos.length?'<table><thead><tr><th>Order</th><th>Supplier</th><th class="num">Value</th>'+
+      '<th>Status</th><th>Approvals</th><th></th></tr></thead><tbody>'+
+      pos.map(function(o){
+        var acts='<button class="ghost" data-act="openPO" data-id="'+esc(o.id)+'">Lines</button> ';
+        if(o.status==='draft')acts+='<button data-act="submitPO" data-id="'+esc(o.id)+'">Send for approval</button> ';
+        if(o.status==='approved')acts+='<button class="primary" data-act="issuePO" data-id="'+esc(o.id)+'">Purchase</button>';
+        return '<tr><td><b>'+esc(o.po_no||'—')+'</b>'+
+          (o.split_flag?'<div class="mini" style="color:var(--amber-ink)">split below threshold</div>':'')+'</td>'+
+          '<td class="mini">'+esc(o.supplier_id?'assigned':'—')+'</td>'+
+          '<td class="num">'+money(o.total)+'</td>'+
+          '<td>'+pill(o.status)+'</td>'+
+          '<td class="mini">'+(o.hpo_approved_by?'Plant Ops ✓<br>':'')+
+             (o.md_approved_by?'Managing Dir ✓':'')+
+             (!o.hpo_approved_by&&!o.md_approved_by?'—':'')+'</td>'+
+          '<td class="num" style="white-space:nowrap">'+acts+'</td></tr>'}).join('')+'</tbody></table>'
+     :'<div class="empty">No purchase orders yet.</div>')+'</div>';
+  el('view').innerHTML=h;
+}
+async function newPO(prId){
+  var pr=await supa.from('adm_purchase_requests').select('*').eq('id',prId).maybeSingle();
+  var ln=await supa.from('adm_pr_lines').select('*').eq('pr_id',prId).order('line_no');
+  var sup=await supa.from('adm_suppliers').select('id,name').order('name');
+  var p=pr.data||{}, rows=ln.data||[], sups=sup.data||[];
+  openModal('<h3>New purchase order from '+esc(p.pr_no||'')+'</h3>'+
+    '<p class="sub">Tick the items going to this one supplier. You can raise several orders '+
+    'from one request — but note each order is judged against the ₱20,000 limit on its own.</p>'+
+    '<label>Supplier</label><select id="poSup"><option value="">— choose —</option>'+
+      sups.map(function(x){return '<option value="'+esc(x.id)+'">'+esc(x.name)+'</option>'}).join('')+
+    '</select>'+
+    '<table style="margin-top:10px"><thead><tr><th></th><th>Item</th><th class="num">Qty</th>'+
+    '<th class="num">Unit price</th></tr></thead><tbody>'+
+    rows.map(function(l){
+      return '<tr><td><input type="checkbox" class="poChk" data-id="'+esc(l.id)+'" checked style="width:auto"></td>'+
+        '<td>'+esc(l.item_name)+'</td>'+
+        '<td class="num"><input class="poQty" data-id="'+esc(l.id)+'" type="number" step="any" value="'+(l.qty||0)+'" style="max-width:90px"></td>'+
+        '<td class="num"><input class="poPrc" data-id="'+esc(l.id)+'" type="number" step="any" value="'+(l.est_price||0)+'" style="max-width:110px"></td>'+
+        '</tr>'}).join('')+'</tbody></table>'+
+    '<div class="row right" style="margin-top:14px">'+
+      '<button data-act="closeModal">Cancel</button>'+
+      '<button class="primary" id="okPO">Create order</button></div>');
+  el('okPO').onclick=async function(){
+    var supId=el('poSup').value||null;
+    if(!supId){toast('Choose a supplier.','err');return}
+    var picks=[].slice.call(document.querySelectorAll('.poChk')).filter(function(c){return c.checked});
+    if(!picks.length){toast('Tick at least one item.','err');return}
+    this.disabled=true;
+    var no='PO-'+new Date().toISOString().slice(2,10).replace(/-/g,'')+'-'+
+           Math.random().toString(36).slice(2,6).toUpperCase();
+    var ins=await supa.from('adm_purchase_orders').insert({
+      po_no:no, pr_id:prId, supplier_id:supId, company:p.company, status:'draft'
+    }).select('id').maybeSingle();
+    if(ins.error){closeModal();toast(errMsg(ins.error),'err');return}
+    var poId=ins.data.id, i=0, lines=[];
+    picks.forEach(function(c){
+      var id=c.getAttribute('data-id');
+      var q=document.querySelector('.poQty[data-id="'+id+'"]').value;
+      var pr2=document.querySelector('.poPrc[data-id="'+id+'"]').value;
+      var src=rows.filter(function(x){return x.id===id})[0]||{};
+      i++; lines.push({po_id:poId,pr_line_id:id,line_no:i,item_name:src.item_name,
+        unit:src.unit,qty:parseFloat(q)||0,unit_price:parseFloat(pr2)||0});
+    });
+    var lr=await supa.from('adm_po_lines').insert(lines.filter(function(l){return l.qty>0}));
+    closeModal();
+    if(lr.error){toast(errMsg(lr.error),'err');return}
+    toast('Purchase order '+no+' created as a draft.','ok'); render();
+  };
+}
+async function openPO(id){
+  var o=await supa.from('adm_purchase_orders').select('*').eq('id',id).maybeSingle();
+  var l=await supa.from('adm_po_lines').select('*').eq('po_id',id).order('line_no');
+  var po=o.data||{}, rows=l.data||[];
+  openModal('<h3>'+esc(po.po_no||'Order')+' '+pill(po.status)+'</h3>'+
+    (po.split_flag?'<div class="warn"><b>Split below threshold.</b> '+esc(po.split_note||'')+'</div>':'')+
+    '<table><thead><tr><th>#</th><th>Item</th><th class="num">Qty</th>'+
+    '<th class="num">Unit price</th><th class="num">Amount</th></tr></thead><tbody>'+
+    (rows.length?rows.map(function(x){return '<tr><td>'+num(x.line_no)+'</td>'+
+      '<td>'+esc(x.item_name)+'</td><td class="num">'+num(x.qty)+'</td>'+
+      '<td class="num">'+money(x.unit_price)+'</td><td class="num">'+money(x.amount)+'</td></tr>'}).join('')
+     :'<tr><td colspan="5"><div class="empty">No lines.</div></td></tr>')+
+    '</tbody></table>'+
+    '<div class="row right" style="margin-top:12px"><b>Total '+money(po.total)+'</b></div>'+
+    (po.hpo_approved_by?'<div class="mini">Plant Ops approved by '+esc(po.hpo_approved_by)+' on '+dt(po.hpo_approved_at)+'</div>':'')+
+    (po.md_approved_by?'<div class="mini">Managing Director approved by '+esc(po.md_approved_by)+' on '+dt(po.md_approved_at)+'</div>':'')+
+    (po.reject_reason?'<div class="warn">Rejected: '+esc(po.reject_reason)+'</div>':'')+
+    '<div class="row right" style="margin-top:14px"><button data-act="closeModal">Close</button></div>');
+}
+function submitPO(id){rpcPreview('adm_po_submit',{p_po_id:id},'Send purchase order for approval — review')}
+function issuePO(id){rpcPreview('adm_po_issue',{p_po_id:id},'Purchase — review')}
 
 /* ================= 3. SOURCING ================= */
 async function viewSourcing(){
