@@ -236,6 +236,7 @@ var ACTIONS={
   supProducts:function(d){supProducts(d.id,d.name)},
   addProduct:function(d){addProduct(d.id)},
   mrLines:function(d){mrLines(d.id)},
+  mrProcess:function(d){mrProcess(d.id)},
   addSupplier:function(){addSupplier()},
   buildOff:function(){buildOff()},
   openPR:function(d){openPR(d.id)},
@@ -270,7 +271,7 @@ var PILL={
   draft:'p-grey', pending_manager:'p-amber', pending_hpo:'p-amber',
   pending_md:'p-amber', approved:'p-green', rejected:'p-red',
   issued:'p-teal', ordered:'p-teal', closed:'p-grey', received:'p-green',
-  authorized:'p-green', issued:'p-teal', partially_issued:'p-amber'
+  authorized:'p-green', issued:'p-teal', partially_issued:'p-amber', partially_received:'p-amber'
 };
 function pill(s){if(!s)return '<span class="pill p-grey">—</span>';
   return '<span class="pill '+(PILL[s]||'p-grey')+'">'+esc(String(s).replace(/_/g,' '))+'</span>'}
@@ -330,7 +331,7 @@ async function _refreshUser(){
   // that control would be meaningless. Approver roles come only from the caps row.
   if(ME.role==='Admin'||ME.role==='Director'){
     ME.caps=Object.assign({},ME.caps,
-      {can_request:1,can_approve:1,can_vouch:1,can_release:1,can_source:1,adminTier:1});
+      {can_request:1,can_approve:1,can_vouch:1,can_release:1,can_source:1,can_issue:1,adminTier:1});
   }
   el('who').innerHTML='<b>'+esc(ME.name||ME.email)+'</b><br>'+
     esc(ME.role||'no role')+(ME.company?' · '+esc(ME.company):'');
@@ -1108,25 +1109,58 @@ async function viewMR(){
         '<td>'+esc(r.quotation_serial||'—')+'</td>'+
         '<td class="mini">'+esc(r.pmes_job_code||'—')+'</td>'+
         '<td>'+pill(r.status)+'</td>'+
-        '<td class="mini">'+(r.authorized_by?esc(r.authorized_by)+'<br>'+dt(r.authorized_at):'—')+'</td>'+
+        '<td class="mini">'+(r.authorized_by?esc(r.authorized_by)+'<br>'+dt(r.authorized_at):'—')+
+          (r.processed_by?'<br><b>Processed</b> '+esc(r.processed_by)+' '+dt(r.processed_at):'')+
+          (r.received_by?'<br><b>Received</b> '+esc(r.received_by)+' '+dt(r.received_at):'')+'</td>'+
         '<td class="num"><button class="ghost" data-act="mrLines" data-id="'+esc(r.id)+'">Lines</button></td>'+
       '</tr>'}).join('')+'</tbody></table>'
      :'<div class="empty">No material requests yet. They are created when you build them on a gate.</div>')+
     '</div>';
 }
+/* The MRF after release: the WAREHOUSE confirms what it processed (issued) here — cap can_issue —
+   and PRODUCTION confirms what it received in PMES. Quantities are the running totals, partial allowed;
+   both steps are recorded in adm_audit_log. */
+var _mrOpen=null;
 async function mrLines(id){
+  var m=await supa.from('adm_material_requests').select('*').eq('id',id).maybeSingle();
   var q=await supa.from('adm_mr_lines').select('*').eq('mr_id',id).order('line_no');
-  var rows=q.data||[];
-  openModal('<h3>Material request lines</h3>'+
-    (rows.length?'<table><thead><tr><th>#</th><th>Item</th><th>Unit</th><th class="num">Qty</th>'+
-      '<th>Sourcing</th><th class="num">Lead</th></tr></thead><tbody>'+
+  var mr=m.data||{}, rows=q.data||[];
+  var canIssue=!!ME.caps.can_issue&&['authorized','partially_issued','issued','partially_received'].indexOf(mr.status)>=0;
+  _mrOpen={id:id,lines:rows};
+  openModal('<h3>Material request '+esc(mr.mr_no||'')+' '+pill(mr.status)+'</h3>'+
+    '<p class="sub">'+esc(mr.stream==='purchase'?'Purchase stream — outsourced / made-to-order items; process them when they arrive.':'Warehouse stream — stocked materials to withdraw.')+
+    ' The warehouse confirms what it processed here; production confirms what it received in PMES.</p>'+
+    (rows.length?'<table><thead><tr><th>#</th><th>Item</th><th>Unit</th><th class="num">Requested</th>'+
+      '<th class="num">Processed</th><th class="num">Received</th><th>Sourcing</th><th class="num">Lead</th></tr></thead><tbody>'+
       rows.map(function(l){return '<tr><td>'+num(l.line_no)+'</td>'+
         '<td>'+esc(l.item_name)+'<div class="mini">'+esc(l.area||'')+'</div></td>'+
         '<td>'+esc(l.unit||'')+'</td><td class="num">'+num(l.qty)+'</td>'+
+        '<td class="num">'+(canIssue?'<input type="number" min="'+(+l.qty_received||0)+'" max="'+l.qty+'" step="any" id="mrIss_'+esc(l.id)+'" value="'+(l.qty_issued!=null?l.qty_issued:'')+'" placeholder="0" style="width:80px;text-align:right">':num(l.qty_issued))+'</td>'+
+        '<td class="num">'+num(l.qty_received)+'</td>'+
         '<td>'+pill(l.sourcing)+'</td>'+
         '<td class="num">'+(l.mto_lead_days!=null?l.mto_lead_days+'d':'—')+'</td></tr>'}).join('')+
       '</tbody></table>':'<div class="empty">No lines.</div>')+
-    '<div class="row right" style="margin-top:14px"><button data-act="closeModal">Close</button></div>');
+    (canIssue?'<div class="row" style="margin-top:10px;gap:8px"><input id="mrIssNote" placeholder="Note (optional)" style="flex:1">'+
+      '<button class="ghost" id="mrIssAll">Fill all as requested</button></div>':'')+
+    (!ME.caps.can_issue&&['authorized','partially_issued'].indexOf(mr.status)>=0?'<div class="info" style="margin-top:10px">Waiting for the warehouse to process it. (Only people with the warehouse <b>Issue</b> capability can confirm.)</div>':'')+
+    '<div class="row right" style="margin-top:14px;gap:8px">'+
+      (canIssue?'<button class="primary" data-act="mrProcess" data-id="'+esc(id)+'">Confirm processed</button>':'')+
+      '<button data-act="closeModal">Close</button></div>');
+  var fill=el('mrIssAll'); if(fill) fill.onclick=function(){ rows.forEach(function(l){ var i=el('mrIss_'+l.id); if(i) i.value=l.qty; }); };
+}
+async function mrProcess(id){
+  if(!_mrOpen||_mrOpen.id!==id) return;
+  var lines=[];
+  for(var i=0;i<_mrOpen.lines.length;i++){
+    var l=_mrOpen.lines[i], inp=el('mrIss_'+l.id); if(!inp) continue;
+    var v=inp.value===''?0:Number(inp.value);
+    if(!(v>=0)){ toast('Line '+l.line_no+': enter a quantity.','err'); return; }
+    lines.push({id:l.id,qty:v});
+  }
+  var r=await supa.rpc('adm_mr_process',{p_mr:id,p_lines:lines,p_note:(el('mrIssNote')||{}).value||null});
+  if(r.error){ toast(r.error.message,'err'); return; }
+  toast('Processed — '+String(r.data.status).replace(/_/g,' ')+' ('+num(r.data.issued)+' of '+num(r.data.requested)+').','ok');
+  closeModal(); render();
 }
 
 /* ================= 5. DASHBOARD ================= */
