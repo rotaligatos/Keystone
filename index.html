@@ -95,6 +95,10 @@ pre.prev{background:#0b0d11;border:1px solid var(--line);border-radius:10px;padd
 .stack{display:flex;flex-direction:column;gap:3px}
 @media(max-width:640px){.topin{flex-wrap:wrap}.who{text-align:left}}
 </style>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0f1115">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
 </head>
 <body>
 
@@ -1229,6 +1233,10 @@ supa.auth.onAuthStateChange(function(){refreshUser()});
   CACHE.cfg=c.data;
   refreshUser();
 })();
+
+// Installable: a no-cache worker (see sw.js — it must never cache).
+if('serviceWorker' in navigator&&location.protocol==='https:')
+  navigator.serviceWorker.register('./sw.js',{scope:'./'}).catch(function(){});
 </script>
 </body>
 </html>
