@@ -237,6 +237,8 @@ var ACTIONS={
   addProduct:function(d){addProduct(d.id)},
   mrLines:function(d){mrLines(d.id)},
   mrProcess:function(d){mrProcess(d.id)},
+  brDecide:function(d){brDecide(d.id,d.ok==='1')},
+  brFinal:function(d){brFinal(d.id,d.ok==='1')},
   addSupplier:function(){addSupplier()},
   buildOff:function(){buildOff()},
   openPR:function(d){openPR(d.id)},
@@ -271,7 +273,9 @@ var PILL={
   draft:'p-grey', pending_manager:'p-amber', pending_hpo:'p-amber',
   pending_md:'p-amber', approved:'p-green', rejected:'p-red',
   issued:'p-teal', ordered:'p-teal', closed:'p-grey', received:'p-green',
-  authorized:'p-green', issued:'p-teal', partially_issued:'p-amber', partially_received:'p-amber'
+  authorized:'p-green', issued:'p-teal', partially_issued:'p-amber', partially_received:'p-amber',
+  sent_to_keystone:'p-amber', accepted:'p-green', rejected_by_keystone:'p-red', escalated:'p-amber',
+  approved_final:'p-green', rejected_final:'p-red', pending_supervisor:'p-grey', pending_manager:'p-grey'
 };
 function pill(s){if(!s)return '<span class="pill p-grey">—</span>';
   return '<span class="pill '+(PILL[s]||'p-grey')+'">'+esc(String(s).replace(/_/g,' '))+'</span>'}
@@ -382,6 +386,7 @@ var TABS=[
   {k:'queue',  t:'Release Queue',    i:'ti-lock-open'},
   {k:'src',    t:'Sourcing',         i:'ti-building-store'},
   {k:'mr',     t:'Material Requests',i:'ti-package'},
+  {k:'boards', t:'Board Requests',   i:'ti-stack-2'},
   {k:'dash',   t:'Dashboard & KPI',  i:'ti-chart-bar'},
   {k:'prov',   t:'Plant & HRIS',     i:'ti-plug-connected'}
 ];
@@ -411,7 +416,7 @@ function render(){
     'What you can see and do here follows your KEYSTONE role.</p></div>';return}
   var fn = TAB==='review'?viewReview : TAB==='appr'?viewApprovals : TAB==='po'?viewPO
          : TAB==='queue'?viewQueue : TAB==='src'?viewSourcing
-         : TAB==='mr'?viewMR : TAB==='dash'?viewDash : viewProv;
+         : TAB==='mr'?viewMR : TAB==='boards'?viewBoardReqs : TAB==='dash'?viewDash : viewProv;
   // A screen that fails must say why. Silence here reads as "the app is broken".
   Promise.resolve().then(fn).catch(function(e){
     fatalCard('This screen could not load',
@@ -1161,6 +1166,54 @@ async function mrProcess(id){
   if(r.error){ toast(r.error.message,'err'); return; }
   toast('Processed — '+String(r.data.status).replace(/_/g,' ')+' ('+num(r.data.issued)+' of '+num(r.data.requested)+').','ok');
   closeModal(); render();
+}
+
+/* ================= BOARD REQUESTS (from PMES) =================
+   Production asks for additional boards when received boards are rejected or defective and the
+   re-run cutting plan comes up short. PMES: supervisor, then manager, approve; then it lands here.
+   Accept -> it becomes a warehouse MRF (processed and received like any other). Reject -> PMES may
+   escalate to the Head of Plant Operations, whose decision is final. */
+async function viewBoardReqs(){
+  el('view').innerHTML='<div class="empty">Loading board requests…</div>';
+  var q=await supa.from('pmes_board_requests').select('*').order('created_at',{ascending:false}).limit(200);
+  if(q.error) throw q.error;
+  var rows=(q.data||[]).filter(function(r){ return ['pending_supervisor','pending_manager','cancelled'].indexOf(r.status)<0; });
+  var canDecide=!!(ME.caps.can_issue||ME.caps.can_release), isHead=!!ME.caps.is_plant_head;
+  el('view').innerHTML='<div class="card"><h3>Board Requests</h3>'+
+    '<p class="sub">Additional boards asked for by production after inspecting what arrived (rejected or defective boards). '+
+    'Approved in PMES by a supervisor and a manager before reaching here. <b>Accept</b> raises a warehouse MRF; '+
+    '<b>Reject</b> sends it back — production may escalate it to the <b>Head of Plant Operations</b>, whose decision is final.</p>'+
+    (rows.length?'<table><thead><tr><th>Job</th><th>Boards</th><th>Why</th><th>Status</th><th>Trail</th><th></th></tr></thead><tbody>'+
+      rows.map(function(r){
+        var trail=[r.supervisor_by&&('Supervisor '+r.supervisor_by),r.manager_by&&('Manager '+r.manager_by),
+          r.ks_by&&('KEYSTONE '+r.ks_by+(r.ks_note?': '+r.ks_note:'')),r.escalated_by&&('Escalated by '+r.escalated_by+': '+r.escalate_note),
+          r.head_by&&('Head of Plant Ops '+r.head_by+': '+r.head_note)].filter(Boolean).map(esc).join('<br>');
+        var act='';
+        if(r.status==='sent_to_keystone'&&canDecide) act='<button class="primary" data-act="brDecide" data-id="'+esc(r.id)+'" data-ok="1">Accept</button> '+
+          '<button data-act="brDecide" data-id="'+esc(r.id)+'" data-ok="0">Reject</button>';
+        if(r.status==='escalated'&&isHead) act='<button class="primary" data-act="brFinal" data-id="'+esc(r.id)+'" data-ok="1">Approve</button> '+
+          '<button data-act="brFinal" data-id="'+esc(r.id)+'" data-ok="0">Reject</button>';
+        if(r.status==='escalated'&&!isHead) act='<span class="mini">Waiting for the Head of Plant Operations</span>';
+        return '<tr><td><b>'+esc(r.job_code||'—')+'</b><div class="mini">'+esc(r.quotation_serial||'')+'<br>'+esc(r.company||'')+'</div></td>'+
+          '<td>'+(r.lines||[]).map(function(l){return num(l.qty)+' × '+esc(l.label);}).join('<br>')+'</td>'+
+          '<td>'+esc(r.reason)+'<div class="mini">'+esc(r.created_by_name||r.created_by)+' · '+dt(r.created_at)+'</div></td>'+
+          '<td>'+pill(r.status)+'</td><td class="mini">'+trail+'</td><td class="num" style="white-space:nowrap">'+act+'</td></tr>';
+      }).join('')+'</tbody></table>'
+     :'<div class="empty">No board requests yet.</div>')+'</div>';
+}
+async function brDecide(id,accept){
+  var note=accept?(prompt('Accept — note for production (optional):')||''):(prompt('Why is this request rejected? Production may escalate it to the Head of Plant Operations.')||'').trim();
+  if(!accept&&!note) return;
+  var r=await supa.rpc('adm_board_request_decide',{p_req:id,p_accept:accept,p_note:note||null});
+  if(r.error){toast(errMsg(r.error),'err');return}
+  toast(accept?'Accepted — a warehouse MRF was raised.':'Rejected — production can escalate it.','ok'); render();
+}
+async function brFinal(id,approve){
+  var note=(prompt((approve?'Approve':'Reject')+' — reason for the final decision:')||'').trim();
+  if(!note) return;
+  var r=await supa.rpc('adm_board_request_final',{p_req:id,p_approve:approve,p_note:note});
+  if(r.error){toast(errMsg(r.error),'err');return}
+  toast(approve?'Approved — a warehouse MRF was raised.':'Rejected — final.','ok'); render();
 }
 
 /* ================= 5. DASHBOARD ================= */
