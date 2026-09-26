@@ -94,6 +94,7 @@ pre.prev{background:#0b0d11;border:1px solid var(--line);border-radius:10px;padd
 .mini{font-size:12px;color:var(--text2)}
 .stack{display:flex;flex-direction:column;gap:3px}
 @media(max-width:640px){.topin{flex-wrap:wrap}.who{text-align:left}}
+.rtmo-logo{height:44px;width:auto;background:#fff;border-radius:7px;padding:2px 6px;margin-left:10px}
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0f1115">
@@ -115,6 +116,7 @@ pre.prev{background:#0b0d11;border:1px solid var(--line);border-radius:10px;padd
     <div class="spacer"></div>
     <div class="who" id="who">Not signed in</div>
     <button id="authBtn" class="primary">Sign in with Google</button>
+    <img src="rtmo-logo.png" alt="RTmo Digital Solutions" title="RTmo Digital Solutions" class="rtmo-logo">
   </div>
   <nav class="tabs" id="tabs"></nav>
 </header>
@@ -192,7 +194,7 @@ var supa=window.supabase.createClient(SUPA_URL,SUPA_ANON_KEY,{
   auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,flowType:'pkce'}});
 
 var ME={email:null,name:null,role:null,company:null,caps:{}};
-var TAB='review';
+var TAB='dash';   // Rommel 2026-09-27: open on the dashboard
 var CACHE={};
 
 /* ---------- small helpers ---------- */
