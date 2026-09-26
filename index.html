@@ -298,22 +298,22 @@ async function _refreshUser(){
   var u=s.data.session&&s.data.session.user;
   if(!u){ME.email=null;render();return}
   ME.email=(u.email||'').trim().toLowerCase();
-  var pr=await supa.from('users').select('name,role,company')
-    .ilike('email',ME.email).limit(1).maybeSingle();
+  // KEYSTONE has its own user list (keystone_users), managed in the Command Center —
+  // separate from Modcraft's users. keystone_me() returns this person's row if active.
+  var pr=await supa.rpc('keystone_me');
   if(pr.data){ME.name=pr.data.name;ME.role=pr.data.role;ME.company=pr.data.company}
   else{
-    // Signed in with Google, but this address is not a Modcraft user. Without a
+    // Signed in with Google, but this address is not an active KEYSTONE user. Without a
     // role and company, RLS correctly returns nothing — which would otherwise
     // look like an empty, broken app.
-    el('who').innerHTML='<b>'+esc(ME.email)+'</b><br>not a Modcraft user';
+    el('who').innerHTML='<b>'+esc(ME.email)+'</b><br>not a KEYSTONE user';
     el('authBtn').textContent='Sign out';
     drawTabs();
-    fatalCard('Your account is not set up in Modcraft',
-      '<p class="sub">You signed in as <b>'+esc(ME.email)+'</b>, but that address has no active row '+
-      'in Modcraft’s user list, so there is nothing this app is allowed to show you.</p>'+
-      '<p class="sub">Ask an Admin to add you in Modcraft &rarr; Settings &rarr; Users, then sign in '+
-      'again. This app deliberately has no separate user list — your role and company come from '+
-      'Modcraft.</p>', false);
+    fatalCard('Your account is not set up in KEYSTONE',
+      '<p class="sub">You signed in as <b>'+esc(ME.email)+'</b>, but that address is not an active '+
+      'KEYSTONE user, so there is nothing this app is allowed to show you.</p>'+
+      '<p class="sub">Ask an Admin to add you in the Command Center &rarr; KEYSTONE users, then sign in '+
+      'again. Your KEYSTONE role and company are set there, separately from Modcraft.</p>', false);
     return;
   }
   var cp=await supa.from('adm_user_caps').select('*').eq('email',ME.email).maybeSingle();
@@ -349,6 +349,11 @@ async function rpcPreview(fn,args,title,onDone){
   openModal(
     '<h3>'+esc(title)+'</h3>'+
     '<p class="sub">Review what this will do. Nothing has been saved yet.</p>'+
+    // Release: say plainly which Modcraft Job Order becomes the PMES job, or why none does.
+    (p.data&&p.data.job_order?'<div style="border:1px solid #0f766e;background:#ecfdf5;color:#065f46;border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:13px">'+
+      'Releases Modcraft Job Order <b>'+esc(p.data.job_order.jo_number)+'</b>'+(p.data.job_order.option?' ('+esc(p.data.job_order.option)+')':'')+
+      ' — '+esc(p.data.job_order.pieces)+' pieces, '+esc(p.data.job_order.boards)+' boards. It becomes the PMES job code, matching the printed labels.</div>':'')+
+    (p.data&&p.data.job_order_note?'<div style="border:1px solid #b45309;background:#fff7ed;color:#7c2d12;border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:13px">⚠ '+esc(p.data.job_order_note)+'</div>':'')+
     '<pre class="prev">'+esc(JSON.stringify(p.data,null,2))+'</pre>'+
     '<div class="row right" style="margin-top:14px">'+
       '<button class="ghost" data-act="closeModal">Cancel</button>'+
@@ -398,7 +403,7 @@ function render(){
   if(!ME.email){el('view').innerHTML=
     '<div class="card"><h3>Sign in required</h3>'+
     '<p class="sub">Use the same Google account you use for Modcraft. '+
-    'What you can see and do here follows your Modcraft role.</p></div>';return}
+    'What you can see and do here follows your KEYSTONE role.</p></div>';return}
   var fn = TAB==='review'?viewReview : TAB==='appr'?viewApprovals : TAB==='po'?viewPO
          : TAB==='queue'?viewQueue : TAB==='src'?viewSourcing
          : TAB==='mr'?viewMR : TAB==='dash'?viewDash : viewProv;
