@@ -213,7 +213,13 @@ function errMsg(e){
 }
 function closeModal(){el('modal').classList.remove('on');el('modalBox').innerHTML=''}
 function openModal(html){el('modalBox').innerHTML=html;el('modal').classList.add('on')}
-el('modal').addEventListener('click',function(e){if(e.target===el('modal'))closeModal()});
+// Close on the backdrop only when the press STARTED on the backdrop. Selecting text in a field and
+// releasing outside the window used to count as a backdrop click and throw the form away.
+var _modalDownOnBackdrop=false;
+el('modal').addEventListener('mousedown',function(e){_modalDownOnBackdrop=(e.target===el('modal'))});
+el('modal').addEventListener('click',function(e){
+  if(e.target===el('modal')&&_modalDownOnBackdrop)closeModal(); _modalDownOnBackdrop=false});
+document.addEventListener('keydown',function(e){if(e.key==='Escape'&&el('modal').classList.contains('on'))closeModal()});
 
 /* Every interactive control is declared with data- attributes and dispatched
    here. Handlers are NEVER built by string concatenation: an apostrophe in a
@@ -363,7 +369,9 @@ async function rpcPreview(fn,args,title,onDone){
       'Releases Modcraft Job Order <b>'+esc(p.data.job_order.jo_number)+'</b>'+(p.data.job_order.option?' ('+esc(p.data.job_order.option)+')':'')+
       ' — '+esc(p.data.job_order.pieces)+' pieces, '+esc(p.data.job_order.boards)+' boards. It becomes the PMES job code, matching the printed labels.</div>':'')+
     (p.data&&p.data.job_order_note?'<div style="border:1px solid #b45309;background:#fff7ed;color:#7c2d12;border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:13px">⚠ '+esc(p.data.job_order_note)+'</div>':'')+
-    '<pre class="prev">'+esc(JSON.stringify(p.data,null,2))+'</pre>'+
+    previewSummary(fn,p.data)+
+    '<details style="margin-top:8px"><summary class="mini" style="cursor:pointer">Technical details</summary>'+
+    '<pre class="prev">'+esc(JSON.stringify(p.data,null,2))+'</pre></details>'+
     '<div class="row right" style="margin-top:14px">'+
       '<button class="ghost" data-act="closeModal">Cancel</button>'+
       '<button class="primary" id="goBtn">Confirm</button></div>');
@@ -376,6 +384,45 @@ async function rpcPreview(fn,args,title,onDone){
     CACHE={};
     if(onDone)onDone(r.data); else render();
   };
+}
+
+/* What a review window says in words. The raw reply stays available under "Technical details". */
+function _pvRow(k,v){return '<tr><td class="mini" style="padding:3px 10px 3px 0;white-space:nowrap">'+esc(k)+'</td><td><b>'+v+'</b></td></tr>'}
+function previewSummary(fn,d){
+  d=d||{}; var h='';
+  if(fn==='adm_build_material_requests'){
+    var items=d.items||[];
+    h+='<p>This prepares the material request for <b>'+esc(d.quotation_serial||'')+'</b> from the quotation’s own scope: '+
+       '<b>'+num(d.warehouse_lines||0)+'</b> line(s) to take from the warehouse'+
+       (d.purchase_lines?' and <b>'+num(d.purchase_lines)+'</b> to purchase (outsourced / made to order)':'')+'. '+
+       'It stays a draft until the job is unlocked.</p>';
+    if(items.length) h+='<table style="width:100%"><thead><tr><th>Item</th><th class="num">Qty</th><th>Unit</th><th>From</th></tr></thead><tbody>'+
+      items.map(function(i){return '<tr><td>'+esc(i.item)+(i.area?'<div class="mini">'+esc(i.area)+'</div>':'')+'</td>'+
+        '<td class="num">'+num(i.qty)+'</td><td>'+esc(i.unit||'')+'</td><td>'+esc(i.stream)+'</td></tr>'}).join('')+'</tbody></table>';
+    else h+='<div class="warn">The quotation has no materials or hardware to request.</div>';
+    return h;
+  }
+  if(fn==='adm_release_gate'){
+    var paid=Number(d.verified_paid||0), need=Number(d.required_amount||0);
+    h+='<table>'+
+      _pvRow('Quotation',esc(d.quotation_serial||''))+
+      _pvRow('Made by (destination)',esc(d.destination_company||'—'))+
+      _pvRow('Payment',money(paid)+' received of '+money(need)+' required'+(d.gate_status==='vouched'?' (vouched)':''))+
+      _pvRow('Terms',esc(d.payment_terms||'—'))+
+      _pvRow('Materials',num(d.material_request_lines||0)+' line(s) — '+(d.material_sourcing==='mto'?'some made to order':'from stock / purchase')+
+        (d.will_authorize_warehouse_mrs?' · warehouse request authorized':'')+(d.will_authorize_purchase_mrs?' · purchase request authorized':''))+
+      _pvRow('Production',d.will_create_job?('New PMES job'+(d.will_create_pmes_parts?' with '+num(d.will_create_pmes_parts)+' labelled parts':'')):
+        ('Updates existing PMES job '+esc((d.pmes_job||{}).job_code||'')))+
+      (d.segregation_override?_pvRow('Override','You opened this gate yourself — recorded as an override with your reason'):'')+
+      '</table>';
+    return h;
+  }
+  // Anything else: the plain fields, in words, skipping internals.
+  var skip={preview:1,note:1,action:1};
+  var rows=Object.keys(d).filter(function(k){return !skip[k]&&(d[k]==null||typeof d[k]!=='object')})
+    .map(function(k){return _pvRow(k.replace(/_/g,' ').replace(/^./,function(c){return c.toUpperCase()}),
+      esc(typeof d[k]==='number'?num(d[k]):(d[k]==null?'—':String(d[k]))))});
+  return rows.length?'<table>'+rows.join('')+'</table>':'';
 }
 
 /* ================= TABS ================= */
@@ -418,7 +465,9 @@ function render(){
          : TAB==='queue'?viewQueue : TAB==='src'?viewSourcing
          : TAB==='mr'?viewMR : TAB==='boards'?viewBoardReqs : TAB==='dash'?viewDash : viewProv;
   // A screen that fails must say why. Silence here reads as "the app is broken".
-  Promise.resolve().then(fn).catch(function(e){
+  // After an action the screen re-renders; stay where the person was instead of jumping to the top.
+  var keepY=(render._tab===TAB)?window.scrollY:0; render._tab=TAB;
+  Promise.resolve().then(fn).then(function(){ if(keepY) window.scrollTo(0,keepY); }).catch(function(e){
     fatalCard('This screen could not load',
       '<p class="sub">The rest of the app still works — switch tabs above.</p>'+
       '<pre class="prev">'+esc(errMsg(e))+'</pre>', true);
@@ -433,7 +482,8 @@ async function viewQueue(){
   if(q.error){el('view').innerHTML='<div class="card"><div class="warn">'+
     esc(errMsg(q.error))+'</div></div>';return}
 
-  var rows=(q.data||[]).filter(function(r){return r.fq_client_approved||r.iq_client_approved});
+  QROWS=(q.data||[]).filter(function(r){return r.fq_client_approved||r.iq_client_approved});
+  var rows=QROWS;
   var fq=rows.filter(function(r){return r.fq_client_approved});
   var iq=rows.filter(function(r){return !r.fq_client_approved});
 
@@ -450,8 +500,14 @@ async function viewQueue(){
 
   h+='<div class="card"><h3>Final Quotation approved</h3>'+
      '<p class="sub">These are live jobs. Payment status here is what PMES reads back.</p>'+
-     (fq.length?fq.map(gateCard).join(''):'<div class="empty">Nothing final-approved yet.</div>')+
-     '</div>';
+     '<div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:10px">'+
+       '<input id="qfSearch" placeholder="Search quotation, client, project, prepared by, agent…" style="flex:1;min-width:240px" value="'+esc(QF.q)+'">'+
+       '<select id="qfCo" style="width:210px;flex:0 0 210px"><option value="">All companies</option><option value="W">World Class Laminate</option>'+
+         '<option value="M">Module Systems</option><option value="C">Cebu World Laminate</option></select>'+
+       '<select id="qfSt" style="width:190px;flex:0 0 190px"><option value="">Any status</option><option value="nogate">No gate yet</option>'+
+         '<option value="pending_payment">Awaiting payment</option><option value="cleared">Cleared to release</option>'+
+         '<option value="released">Released</option></select>'+
+     '</div><div id="qfList"></div></div>';
 
   h+='<div class="card"><h3>Initial Quotation approved — canvassing only</h3>'+
      '<p class="sub">Not yet final-approved. You can generate a purchase request and start '+
@@ -469,6 +525,34 @@ async function viewQueue(){
       :'<div class="empty">Nothing at initial-approval stage.</div>')+'</div>';
 
   el('view').innerHTML=h;
+  el('qfCo').value=QF.co; el('qfSt').value=QF.st;
+  el('qfSearch').oninput=function(){QF.q=this.value;drawQueueList()};
+  el('qfCo').onchange=function(){QF.co=this.value;drawQueueList()};
+  el('qfSt').onchange=function(){QF.st=this.value;drawQueueList()};
+  drawQueueList();
+}
+
+/* Release Queue search + filters. Kept across re-renders so an action never loses the person's place. */
+var QROWS=[], QF={q:'',co:'',st:''};
+function _coKey(s){s=String(s||'').toLowerCase();
+  return s.indexOf('module')>=0?'M':s.indexOf('cebu')>=0?'C':s.indexOf('world class')>=0?'W':''}
+function drawQueueList(){
+  var box=el('qfList'); if(!box)return;
+  var words=QF.q.toLowerCase().split(/\s+/).filter(Boolean);
+  var list=QROWS.filter(function(r){
+    if(!r.fq_client_approved) return false;
+    if(QF.co&&_coKey(r.company)!==QF.co) return false;
+    if(QF.st){
+      var st=r.gate_id?r.gate_status:'nogate';
+      if(QF.st==='cleared'?(st!=='paid'&&st!=='vouched'):st!==QF.st) return false;
+    }
+    var hay=[r.serial,r.client_name,r.project_name,r.prepared_by,r.agent,r.company,r.destination_company,r.jo_number,r.pmes_job_code]
+      .join(' ').toLowerCase();
+    return words.every(function(w){return hay.indexOf(w)>=0});
+  });
+  box.innerHTML=(list.length?list.map(gateCard).join(''):
+    '<div class="empty">'+(QROWS.some(function(r){return r.fq_client_approved})?'Nothing matches the search.':'Nothing final-approved yet.')+'</div>')+
+    '<div class="mini" style="margin-top:6px">'+list.length+' shown</div>';
 }
 
 function kpi(lbl,val,hint){
@@ -482,11 +566,22 @@ function gateCard(r){
   var need=r.required_amount||0;
   var canAct=ME.caps.can_release||ME.caps.can_approve;
   var h='<div class="gate" style="margin-bottom:10px">'+
-    '<div class="row"><b>'+esc(r.serial)+'</b>'+
+    '<div class="row" style="flex-wrap:wrap;gap:6px"><b>'+esc(r.serial)+'</b>'+
+      (r.revision?'<span class="pill p-amber">Revision R'+esc(r.revision)+'</span>':'')+
       (r.gate_id?pill(r.gate_status):'<span class="pill p-grey">no gate</span>')+
-      (r.pmes_job_code?'<span class="pill p-blue">JO '+esc(r.pmes_job_code)+'</span>':'')+
+      (r.pmes_job_code?'<span class="pill p-blue">PMES '+esc(r.pmes_job_code)+'</span>':
+        (r.jo_number?'<span class="pill p-grey">Job Order '+esc(r.jo_number)+'</span>':''))+
       '<div class="spacer" style="flex:1"></div>'+
-      '<span class="mini">'+esc(r.client_name||'')+' · '+esc(r.company||'')+'</span></div>';
+      '<b>'+money(r.total)+'</b></div>'+
+    '<div style="margin-top:4px;font-size:14px"><b>'+esc(r.client_name||'—')+'</b>'+
+      (r.project_name?' — '+esc(r.project_name):'')+'</div>'+
+    '<div class="mini" style="margin-top:2px">'+
+      esc(r.company||'—')+
+      ' · Prepared by <b>'+esc(r.prepared_by||'—')+'</b>'+
+      (r.agent?' · Agent '+esc(r.agent):'')+
+      (r.client_approved_at?' · Client approved '+dt(r.client_approved_at):'')+
+      (r.destination_company?' · Made by '+esc(r.destination_company):'')+
+    '</div>';
 
   if(!r.gate_id){
     h+='<div class="row" style="margin-top:9px"><span class="mini">Quotation total '+
@@ -535,19 +630,27 @@ async function openGate(serial){
     'they can be pulled in automatically.</p>'+
     '<div class="grid g2">'+
       '<div><label>Contract amount</label><input id="gAmt" type="number" step="0.01" value="'+(r.total||0)+'"></div>'+
-      '<div><label>Destination company</label><select id="gCo">'+
+      '<div><label>Made by (destination plant)</label><select id="gCo">'+
         ['MSSI','WCLI','CWLI'].map(function(c){return '<option>'+c+'</option>'}).join('')+
-        '</select></div>'+
+        '</select><div class="mini">Which company’s production makes this job — its PMES line receives it. '+
+        'Usually the company that quoted; change it only when another plant builds it.</div></div>'+
       '<div><label>Payment option</label><select id="gOpt">'+
         opts.map(function(o){return '<option>'+esc(o)+'</option>'}).join('')+'</select></div>'+
       '<div><label>Required to unlock (%)</label><input id="gPct" type="number" min="1" max="100" value="50"></div>'+
     '</div>'+
     '<label>Agreed terms</label><select id="gTerms" onchange="el(\'gTermsTxt\').value=this.value">'+
       terms.map(function(t){return '<option>'+esc(t)+'</option>'}).join('')+'</select>'+
-    '<input id="gTermsTxt" style="margin-top:6px" value="'+esc(terms[1]||terms[0])+'">'+
+    '<input id="gTermsTxt" style="margin-top:6px" value="'+esc(terms[0])+'">'+
+    '<div class="mini">The % required to unlock follows the terms you pick (the first % in them); you can still change it.</div>'+
     '<div class="row right" style="margin-top:14px">'+
       '<button class="ghost" data-act="closeModal">Cancel</button>'+
       '<button class="primary" id="okGate">Open gate</button></div>');
+  // Default the plant to the quotation's own company, and keep the % in step with the terms, so the
+  // gate can never say "100% upon approval" while requiring 50%.
+  var ck=_coKey(r.company); el('gCo').value=ck==='M'?'MSSI':ck==='C'?'CWLI':'WCLI';
+  function syncPct(){var m=String(el('gTermsTxt').value).match(/(\d+(?:\.\d+)?)\s*%/); if(m) el('gPct').value=m[1];}
+  el('gTerms').onchange=function(){el('gTermsTxt').value=this.value;syncPct()};
+  el('gTermsTxt').oninput=syncPct; syncPct();
   el('okGate').onclick=async function(){
     this.disabled=true;
     var ins=await supa.from('adm_release_gates').insert({
