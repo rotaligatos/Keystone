@@ -94,6 +94,13 @@ pre.prev{background:#0b0d11;border:1px solid var(--line);border-radius:10px;padd
 .mini{font-size:12px;color:var(--text2)}
 .stack{display:flex;flex-direction:column;gap:3px}
 @media(max-width:640px){.topin{flex-wrap:wrap}.who{text-align:left}}
+.card{overflow-x:auto}
+@media(max-width:640px){#envPill{display:none}.rtmo-logo{height:32px!important;margin-right:6px!important}.topin{gap:8px;padding:8px 12px}.who{display:none}nav.tabs{padding:0 8px}}
+nav.subtabs{border-top:1px solid var(--line)}
+nav.subtabs button{padding:7px 12px;font-size:13px}
+.tabcount{display:inline-block;min-width:18px;padding:0 6px;margin-left:4px;border-radius:9px;background:var(--amber-ink,#f0b44c);color:#1a1300;font-size:11px;font-weight:700;line-height:17px;text-align:center}
+.needs .kpi{cursor:pointer}
+.needs .kpi.act{border-color:var(--amber-ink,#f0b44c)}
 .rtmo-logo{height:44px;width:auto;background:#fff;border-radius:7px;padding:2px 6px;margin-right:12px}
 </style>
 <link rel="manifest" href="manifest.webmanifest">
@@ -119,6 +126,7 @@ pre.prev{background:#0b0d11;border:1px solid var(--line);border-radius:10px;padd
     <button id="authBtn" class="primary">Sign in with Google</button>
   </div>
   <nav class="tabs" id="tabs"></nav>
+  <nav class="tabs subtabs" id="subtabs" style="display:none"></nav>
 </header>
 <div id="buildbar"></div>
 
@@ -194,7 +202,7 @@ var supa=window.supabase.createClient(SUPA_URL,SUPA_ANON_KEY,{
   auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,flowType:'pkce'}});
 
 var ME={email:null,name:null,role:null,company:null,caps:{}};
-var TAB='dash';   // Rommel 2026-09-27: open on the dashboard
+var TAB='dash'; var _landed=false;   // Rommel 2026-09-27: open on the dashboard
 var CACHE={};
 
 /* ---------- small helpers ---------- */
@@ -231,6 +239,9 @@ document.addEventListener('keydown',function(e){if(e.key==='Escape'&&el('modal')
    by exactly that bug before. */
 var ACTIONS={
   go:function(d){go(d.tab)},
+  goGroup:function(d){goGroup(d.g)},
+  mrFillAll:function(d){mrFillAll(d.id)},
+  mrProcessInline:function(d){mrProcessInline(d.id)},
   genPR:function(d){genPR(d.serial)},
   openGate:function(d){openGate(d.serial)},
   viewQuote:function(d){viewQuote(d.serial)},
@@ -350,6 +361,10 @@ async function _refreshUser(){
   el('who').innerHTML='<b>'+esc(ME.name||ME.email)+'</b><br>'+
     esc(ME.role||'no role')+(ME.company?' · '+esc(ME.company):'');
   el('authBtn').textContent='Sign out';
+  if(!_landed){ _landed=true;
+    var c=ME.caps||{};
+    TAB=(c.can_issue&&!c.adminTier)?'mr':(c.is_manager_approver||c.is_hpo_approver||c.is_md_approver)&&!c.adminTier?'appr':'dash';
+    LAST[groupOf(TAB).k]=TAB; }
   render();
 }
 el('authBtn').onclick=async function(){
@@ -385,7 +400,7 @@ async function rpcPreview(fn,args,title,onDone){
     closeModal();
     if(r.error){toast(errMsg(r.error),'err');return}
     toast('Done.','ok');
-    CACHE={};
+    CACHE={}; _needAt=0;
     if(onDone)onDone(r.data); else render();
   };
 }
@@ -429,24 +444,131 @@ function previewSummary(fn,d){
   return rows.length?'<table>'+rows.join('')+'</table>':'';
 }
 
-/* ================= TABS ================= */
-var TABS=[
-  {k:'dash',   t:'Dashboard & KPI',  i:'ti-chart-bar'},
-  {k:'review', t:'My Requests',      i:'ti-clipboard-check'},
-  {k:'appr',   t:'Approvals',        i:'ti-writing-sign'},
-  {k:'po',     t:'Purchase Orders',  i:'ti-file-dollar'},
-  {k:'queue',  t:'Release Queue',    i:'ti-lock-open'},
-  {k:'src',    t:'Sourcing',         i:'ti-building-store'},
-  {k:'mr',     t:'Material Requests',i:'ti-package'},
-  {k:'boards', t:'Board Requests',   i:'ti-stack-2'},
-  {k:'prov',   t:'Plant & HRIS',     i:'ti-plug-connected'}
+/* ================= TABS =================
+   Rommel 2026-09-27: tabs in work order, grouped. A main tab may hold sub-tabs; TAB is always the
+   leaf (the screen shown). Each main tab shows a count of what waits for the signed-in person. */
+var GROUPS=[
+  {k:'dash',  t:'Dashboard',     i:'ti-chart-bar',     leaves:[['dash','Dashboard']]},
+  {k:'queue', t:'Release Queue', i:'ti-lock-open',     leaves:[['queue','Release queue']]},
+  {k:'purch', t:'Purchasing',    i:'ti-file-dollar',   leaves:[['review','My requests'],['appr','Approvals'],['po','Purchase orders'],['src','Suppliers']]},
+  {k:'wh',    t:'Warehouse',     i:'ti-package',       leaves:[['mr','Material requests'],['boards','Board requests']]},
+  {k:'more',  t:'More',          i:'ti-dots',          leaves:[['prov','Plant & HRIS']]}
 ];
+var LAST={};
+function groupOf(leaf){for(var i=0;i<GROUPS.length;i++){if(GROUPS[i].leaves.some(function(l){return l[0]===leaf}))return GROUPS[i]}return GROUPS[0]}
+function _badge(n){return n?' <span class="tabcount">'+n+'</span>':''}
 function drawTabs(){
-  el('tabs').innerHTML=TABS.map(function(t){
-    return '<button class="'+(TAB===t.k?'on':'')+'" data-act="go" data-tab="'+esc(t.k)+'">'+
-      '<i class="ti '+t.i+'"></i> '+esc(t.t)+'</button>'}).join('');
+  var g=groupOf(TAB);
+  el('tabs').innerHTML=GROUPS.map(function(G){
+    var n=G.leaves.reduce(function(a,l){return a+(NEED[l[0]]||0)},0);
+    return '<button class="'+(g.k===G.k?'on':'')+'" data-act="goGroup" data-g="'+esc(G.k)+'">'+
+      '<i class="ti '+G.i+'"></i> '+esc(G.t)+_badge(n)+'</button>'}).join('');
+  var st=el('subtabs'); if(!st)return;
+  st.innerHTML=g.leaves.length>1?g.leaves.map(function(l){
+    return '<button class="'+(TAB===l[0]?'on':'')+'" data-act="go" data-tab="'+esc(l[0])+'">'+esc(l[1])+_badge(NEED[l[0]]||0)+'</button>'}).join(''):'';
+  st.style.display=g.leaves.length>1?'':'none';
 }
-function go(k){TAB=k;drawTabs();render()}
+function go(k){TAB=k;LAST[groupOf(k).k]=k;drawTabs();render()}
+function goGroup(gk){var G=GROUPS.filter(function(x){return x.k===gk})[0]||GROUPS[0];go(LAST[gk]||G.leaves[0][0])}
+
+/* What waits for the signed-in person — drives the tab counts and the Dashboard "Needs you" row.
+   Counts only what this person can act on; refreshed every 20 s at most, and after every action. */
+var NEED={}, NEED_DETAIL={}, _needAt=0, _needBusy=null;
+async function refreshNeeds(force){
+  if(!ME.email||!ME.role) return;
+  if(!force&&Date.now()-_needAt<20000) return;
+  if(_needBusy) return _needBusy;
+  _needBusy=(async function(){
+    var c=ME.caps||{}, canAct=c.can_release||c.can_approve;
+    var q=await Promise.all([
+      supa.from('adm_v_release_queue').select('serial,fq_client_approved,gate_id,gate_status').limit(1000),
+      supa.from('adm_purchase_requests').select('id,status,requested_by,signed_by').limit(1000),
+      supa.from('adm_purchase_orders').select('id,status').limit(1000),
+      supa.from('adm_material_requests').select('id,status').in('status',['authorized','partially_issued']).limit(1000),
+      supa.from('pmes_board_requests').select('id,status').in('status',['sent_to_keystone','escalated']).limit(500)
+    ]);
+    var gq=q[0].data||[], prs=q[1].data||[], pos=q[2].data||[], mrs=q[3].data||[], brs=q[4].data||[];
+    var fq=gq.filter(function(r){return r.fq_client_approved});
+    var mine=function(r){return ((r.requested_by||'').toLowerCase()===ME.email)||((r.signed_by||'').toLowerCase()===ME.email)};
+    var d={
+      gates_to_open: canAct?fq.filter(function(r){return !r.gate_id}).length:0,
+      awaiting_payment: canAct?fq.filter(function(r){return r.gate_status==='pending_payment'}).length:0,
+      ready_to_release: c.can_release?fq.filter(function(r){return r.gate_status==='paid'||r.gate_status==='vouched'}).length:0,
+      my_drafts: prs.filter(function(r){return r.status==='draft'&&(r.requested_by||'').toLowerCase()===ME.email}).length,
+      pr_to_approve: prs.filter(function(r){return !mine(r)&&((r.status==='pending_manager'&&c.is_manager_approver)||(r.status==='pending_hpo'&&c.is_hpo_approver))}).length,
+      po_to_approve: pos.filter(function(o){return (o.status==='pending_hpo'&&c.is_hpo_approver)||(o.status==='pending_md'&&c.is_md_approver)}).length,
+      po_to_act: c.can_source?pos.filter(function(o){return o.status==='draft'||o.status==='approved'}).length+prs.filter(function(r){return r.status==='approved'}).length:0,
+      mr_to_process: c.can_issue?mrs.length:0,
+      boards_to_decide: brs.filter(function(r){return (r.status==='sent_to_keystone'&&(c.can_issue||c.can_release))||(r.status==='escalated'&&c.is_plant_head)}).length
+    };
+    NEED_DETAIL=d;
+    NEED={queue:d.gates_to_open+d.ready_to_release, review:d.my_drafts, appr:d.pr_to_approve+d.po_to_approve,
+          po:d.po_to_act, mr:d.mr_to_process, boards:d.boards_to_decide};
+    _needAt=Date.now(); _needBusy=null; drawTabs();
+  })().catch(function(){_needBusy=null});
+  return _needBusy;
+}
+
+/* Search + company filter for a list. Rows carry data-s (text to search) and data-co (W/M/C key);
+   filtering is done in place so typing never loses focus, and the choice survives a re-render. */
+var LF={};
+function listBar(id,ph){
+  var f=LF[id]||{q:'',co:''};
+  return '<div class="row" style="margin-bottom:10px">'+
+    '<input data-lf="'+esc(id)+'" placeholder="'+esc(ph||'Search…')+'" value="'+esc(f.q)+'" style="flex:1;min-width:220px">'+
+    '<select data-lfc="'+esc(id)+'" style="width:auto;min-width:170px">'+
+      [['','All companies'],['W','World Class Laminate'],['M','Module Systems'],['C','Cebu World Laminate']].map(function(o){
+        return '<option value="'+o[0]+'"'+(f.co===o[0]?' selected':'')+'>'+o[1]+'</option>'}).join('')+'</select></div>';
+}
+function applyLF(id){
+  var f=LF[id]||{q:'',co:''}, words=f.q.toLowerCase().split(/\s+/).filter(Boolean), shown=0, total=0;
+  document.querySelectorAll('[data-lft="'+id+'"] [data-s]').forEach(function(r){
+    total++;
+    var ok=(!f.co||r.getAttribute('data-co')===f.co)&&words.every(function(w){return (r.getAttribute('data-s')||'').indexOf(w)>=0});
+    r.style.display=ok?'':'none'; if(ok)shown++;
+  });
+  var c=document.querySelector('[data-lfn="'+id+'"]'); if(c)c.textContent=total?(shown+' of '+total+' shown'):'';
+}
+function applyAllLF(){document.querySelectorAll('[data-lft]').forEach(function(t){applyLF(t.getAttribute('data-lft'))})}
+document.addEventListener('input',function(e){var id=e.target.getAttribute&&e.target.getAttribute('data-lf');
+  if(id){LF[id]=Object.assign(LF[id]||{co:''},{q:e.target.value});applyLF(id)}});
+document.addEventListener('change',function(e){var id=e.target.getAttribute&&e.target.getAttribute('data-lfc');
+  if(id){LF[id]=Object.assign(LF[id]||{q:''},{co:e.target.value});applyLF(id)}});
+function rowAttrs(parts,company){
+  return ' data-s="'+esc(parts.filter(Boolean).join(' ').toLowerCase())+'" data-co="'+esc(_coKey(company))+'"';
+}
+
+/* Client — project for a quotation number, filled in after a list draws (adm_quote_labels). */
+var QL={};
+function qLabel(serial){return serial?'<div class="mini qlbl" data-serial="'+esc(serial)+'">'+(QL[serial]?esc(QL[serial]):'')+'</div>':''}
+async function fillQLabels(){
+  var nodes=[].slice.call(document.querySelectorAll('.qlbl')); if(!nodes.length)return;
+  var want=nodes.map(function(n){return n.getAttribute('data-serial')}).filter(function(s,i,a){return s&&QL[s]===undefined&&a.indexOf(s)===i});
+  if(want.length){
+    var r=await supa.rpc('adm_quote_labels',{p_serials:want});
+    want.forEach(function(s){QL[s]=''});
+    (r.data||[]).forEach(function(x){QL[x.serial]=[x.client,x.project].filter(Boolean).join(' — ')});
+  }
+  nodes.forEach(function(n){var s=n.getAttribute('data-serial');n.textContent=QL[s]||'';
+    var row=n.closest('[data-s]'); if(row&&QL[s]&&row.getAttribute('data-s').indexOf(QL[s].toLowerCase())<0)
+      row.setAttribute('data-s',row.getAttribute('data-s')+' '+QL[s].toLowerCase())});
+  applyAllLF();
+}
+
+/* A proper form for a reason (replaces the browser's tiny prompt box). cb(text) on OK. */
+function askText(title,label,required,cb,opts){
+  opts=opts||{};
+  openModal('<h3>'+esc(title)+'</h3>'+(opts.sub?'<p class="sub">'+opts.sub+'</p>':'')+
+    '<label>'+esc(label)+(required?' (required)':'')+'</label>'+
+    (opts.single?'<input id="askT" placeholder="'+esc(opts.ph||'')+'">':'<textarea id="askT" rows="3" placeholder="'+esc(opts.ph||'')+'"></textarea>')+
+    '<div class="row right" style="margin-top:14px"><button class="ghost" data-act="closeModal">Cancel</button>'+
+    '<button class="'+(opts.danger?'danger':'primary')+'" id="askOk">'+esc(opts.ok||'Continue')+'</button></div>');
+  setTimeout(function(){var t=el('askT');if(t)t.focus()},30);
+  el('askOk').onclick=function(){var v=(el('askT').value||'').trim();
+    if(required&&!v){toast(label+' is required.','err');return}
+    closeModal();cb(v)};
+}
+
 
 function drawBuildBar(){
   var b=el('buildbar'); if(!b)return;
@@ -471,7 +593,7 @@ function render(){
   // A screen that fails must say why. Silence here reads as "the app is broken".
   // After an action the screen re-renders; stay where the person was instead of jumping to the top.
   var keepY=(render._tab===TAB)?window.scrollY:0; render._tab=TAB;
-  Promise.resolve().then(fn).then(function(){ if(keepY) window.scrollTo(0,keepY); }).catch(function(e){
+  Promise.resolve().then(fn).then(function(){ if(keepY) window.scrollTo(0,keepY); applyAllLF(); fillQLabels(); refreshNeeds(); }).catch(function(e){
     fatalCard('This screen could not load',
       '<p class="sub">The rest of the app still works — switch tabs above.</p>'+
       '<pre class="prev">'+esc(errMsg(e))+'</pre>', true);
@@ -760,14 +882,14 @@ function buildMR(gid){
 }
 
 function release(gid){
-  var reason=null;
-  if(ME.caps.adminTier){
-    reason=prompt('If you opened this gate yourself, an override reason is required '+
-      '(leave blank if someone else opened it):')||null;
-  }
-  rpcPreview('adm_release_gate',
-    {p_gate_id:gid,p_override_reason:reason},
-    'Unlock material request + Job Order — review');
+  var go_=function(reason){rpcPreview('adm_release_gate',{p_gate_id:gid,p_override_reason:reason||null},'Unlock material request + Job Order — review')};
+  // Segregation of duties: whoever opened the gate may not release it, except an Admin/Director with a
+  // written reason. Ask only when it applies.
+  var r=(QROWS||[]).filter(function(x){return x.gate_id===gid})[0]||{};
+  if(ME.caps.adminTier&&(r.gate_created_by||'').toLowerCase()===ME.email)
+    return askText('You opened this gate yourself','Override reason',true,go_,
+      {sub:'The person who opened a gate normally cannot also release it. As Admin/Director you may, with a reason — it is recorded as an override.',ok:'Continue to review'});
+  go_(null);
 }
 
 function genPR(serial){
@@ -809,9 +931,9 @@ async function viewReview(){
       kpi('Total value drafted',money(drafts.reduce(function(a,r){return a+(+r.est_total||0)},0)),'')+
     '</div></div>';
 
-  h+=prTable('Drafts — yours to review and sign',drafts,true);
-  h+=prTable('Sent for approval',moving,false);
-  h+=prTable('Finished',done,false);
+  h+=(mine.length?'<div class="card">'+listBar('review','Search request, job, client, title…')+'<div class="mini" data-lfn="review"></div></div>':'')+
+     '<div data-lft="review">'+prTable('Drafts — yours to review and sign',drafts,true)+
+     prTable('Sent for approval',moving,false)+prTable('Finished',done,false)+'</div>';
 
   if(!mine.length){
     h+='<div class="card"><div class="info">You have no purchase requests yet. '+
@@ -826,9 +948,9 @@ function prTable(title,rows,isDraft){
     '<th>Request</th><th>Job</th><th>Title</th><th class="num">Lines</th>'+
     '<th class="num">Value</th><th>Status</th><th></th></tr></thead><tbody>'+
     rows.map(function(r){
-      return '<tr><td><b>'+esc(r.pr_no||'—')+'</b>'+
+      return '<tr'+rowAttrs([r.pr_no,r.quotation_serial,r.title,r.status],r.company)+'><td><b>'+esc(r.pr_no||'—')+'</b>'+
         (r.auto_generated?'<div class="mini">auto · '+esc(r.source_stage||'')+'</div>':'')+'</td>'+
-        '<td>'+esc(r.quotation_serial||'combined')+'</td>'+
+        '<td>'+esc(r.quotation_serial||'combined')+qLabel(r.quotation_serial)+'</td>'+
         '<td>'+esc(r.title||'')+'</td>'+
         '<td class="num" id="c_'+esc(r.id)+'">·</td>'+
         '<td class="num">'+money(r.est_total)+'</td>'+
@@ -892,9 +1014,8 @@ async function openPR(id){
 function signPR(id){closeModal();rpcPreview('adm_pr_sign',{p_pr_id:id},'Sign this request — review')}
 function consolidatePR(id){closeModal();rpcPreview('adm_pr_consolidate',{p_pr_id:id},'Merge duplicate items — review')}
 function addQuotation(id){
-  var ser=prompt('Quotation number to add into this request (e.g. QT-W00000132):');
-  if(!ser)return; closeModal();
-  rpcPreview('adm_pr_add_from_quotation',{p_pr_id:id,p_serial:ser.trim()},'Add another job — review');
+  askText('Add another job','Quotation number',true,function(ser){
+    rpcPreview('adm_pr_add_from_quotation',{p_pr_id:id,p_serial:ser},'Add another job — review')},{single:1,ph:'e.g. QT-W00000132'});
 }
 async function editLine(lineId,prId){
   var q=await supa.from('adm_pr_lines').select('*').eq('id',lineId).maybeSingle();
@@ -957,13 +1078,14 @@ async function viewApprovals(){
       kpi('All orders in flight',pos.length,'across the company')+
     '</div></div>';
 
-  h+='<div class="card"><h3>Purchase requests</h3>'+
+  h+='<div class="card">'+listBar('appr','Search request, order, job, client…')+'<div class="mini" data-lfn="appr"></div></div>';
+  h+='<div data-lft="appr"><div class="card"><h3>Purchase requests</h3>'+
     (mineP.length?'<table><thead><tr><th>Request</th><th>Job</th><th>Raised by</th>'+
       '<th class="num">Value</th><th>Stage</th><th></th></tr></thead><tbody>'+
       mineP.map(function(r){
         var own=((r.requested_by||'').toLowerCase()===ME.email)||((r.signed_by||'').toLowerCase()===ME.email);
-        return '<tr><td><b>'+esc(r.pr_no)+'</b></td>'+
-          '<td>'+esc(r.quotation_serial||'combined')+'</td>'+
+        return '<tr'+rowAttrs([r.pr_no,r.quotation_serial,r.signed_by,r.requested_by],r.company)+'><td><b>'+esc(r.pr_no)+'</b></td>'+
+          '<td>'+esc(r.quotation_serial||'combined')+qLabel(r.quotation_serial)+'</td>'+
           '<td class="mini">'+esc(r.signed_by||r.requested_by||'')+'</td>'+
           '<td class="num">'+money(r.est_total)+'</td>'+
           '<td>'+pill(r.status)+'</td>'+
@@ -981,7 +1103,7 @@ async function viewApprovals(){
     (mineO.length?'<table><thead><tr><th>Order</th><th class="num">Value</th><th>Stage</th>'+
       '<th>Notes</th><th></th></tr></thead><tbody>'+
       mineO.map(function(o){
-        return '<tr><td><b>'+esc(o.po_no||'—')+'</b></td>'+
+        return '<tr'+rowAttrs([o.po_no,o.status],o.company)+'><td><b>'+esc(o.po_no||'—')+'</b></td>'+
           '<td class="num">'+money(o.total)+'</td>'+
           '<td>'+pill(o.status)+'</td>'+
           '<td>'+(o.split_flag?'<span class="pill p-amber">split</span> <span class="mini">'+
@@ -991,20 +1113,18 @@ async function viewApprovals(){
             '<button class="primary" data-act="apprPO" data-id="'+esc(o.id)+'">Approve</button> '+
             '<button class="danger" data-act="rejPO" data-id="'+esc(o.id)+'">Reject</button>'+
           '</td></tr>'}).join('')+'</tbody></table>'
-     :'<div class="empty">Nothing waiting for your decision.</div>')+'</div>';
+     :'<div class="empty">Nothing waiting for your decision.</div>')+'</div></div>';
   el('view').innerHTML=h;
 }
 function apprPR(id,ok){
-  var reason=ok?null:(prompt('Reason for rejection (required):')||'');
-  if(!ok&&!reason.trim()){toast('A reason is required to reject.','err');return}
-  rpcPreview('adm_pr_approve',{p_pr_id:id,p_approve:ok,p_reason:reason},
-    (ok?'Approve':'Reject')+' purchase request — review');
+  if(ok) return rpcPreview('adm_pr_approve',{p_pr_id:id,p_approve:true,p_reason:null},'Approve purchase request — review');
+  askText('Reject purchase request','Reason for rejection',true,function(reason){
+    rpcPreview('adm_pr_approve',{p_pr_id:id,p_approve:false,p_reason:reason},'Reject purchase request — review')},{danger:1,ok:'Continue to review'});
 }
 function apprPO(id,ok){
-  var reason=ok?null:(prompt('Reason for rejection (required):')||'');
-  if(!ok&&!reason.trim()){toast('A reason is required to reject.','err');return}
-  rpcPreview('adm_po_approve',{p_po_id:id,p_approve:ok,p_reason:reason},
-    (ok?'Approve':'Reject')+' purchase order — review');
+  if(ok) return rpcPreview('adm_po_approve',{p_po_id:id,p_approve:true,p_reason:null},'Approve purchase order — review');
+  askText('Reject purchase order','Reason for rejection',true,function(reason){
+    rpcPreview('adm_po_approve',{p_po_id:id,p_approve:false,p_reason:reason},'Reject purchase order — review')},{danger:1,ok:'Continue to review'});
 }
 
 /* ================= PURCHASE ORDERS ================= */
@@ -1015,6 +1135,11 @@ async function viewPO(){
     .in('status',['approved','ordered']);
   if(oq.error)throw oq.error;
   var pos=oq.data||[], readyPRs=pq.data||[];
+  var sq=await supa.from('adm_suppliers').select('id,name');
+  var supName={}; (sq.data||[]).forEach(function(x){supName[x.id]=x.name});
+  var prIds=pos.map(function(o){return o.pr_id}).filter(Boolean), prSerial={};
+  if(prIds.length){var pr2=await supa.from('adm_purchase_requests').select('id,pr_no,quotation_serial').in('id',prIds);
+    (pr2.data||[]).forEach(function(x){prSerial[x.id]=x})}
 
   var h='<div class="card"><h3>Purchase Orders</h3>'+
     '<p class="sub">Raised against a fully approved request. Each order goes to the Head of '+
@@ -1025,15 +1150,18 @@ async function viewPO(){
         '<i class="ti ti-plus"></i> New PO from '+esc(p.pr_no)+'</button>'}).join('')+'</div>'
      :'<div class="info">No approved purchase requests yet. A request must clear the Manager '+
       'and the Head of Plant Operations before an order can be raised.</div>')+
-    (pos.length?'<table><thead><tr><th>Order</th><th>Supplier</th><th class="num">Value</th>'+
+    (pos.length?listBar('po','Search order, supplier, request, job, client…')+'<div class="mini" data-lfn="po"></div>'+
+      '<table data-lft="po"><thead><tr><th>Order</th><th>Supplier</th><th class="num">Value</th>'+
       '<th>Status</th><th>Approvals</th><th></th></tr></thead><tbody>'+
       pos.map(function(o){
         var acts='<button class="ghost" data-act="openPO" data-id="'+esc(o.id)+'">Lines</button> ';
         if(o.status==='draft')acts+='<button data-act="submitPO" data-id="'+esc(o.id)+'">Send for approval</button> ';
         if(o.status==='approved')acts+='<button class="primary" data-act="issuePO" data-id="'+esc(o.id)+'">Purchase</button>';
-        return '<tr><td><b>'+esc(o.po_no||'—')+'</b>'+
-          (o.split_flag?'<div class="mini" style="color:var(--amber-ink)">split below threshold</div>':'')+'</td>'+
-          '<td class="mini">'+esc(o.supplier_id?'assigned':'—')+'</td>'+
+        var pr=prSerial[o.pr_id]||{};
+        return '<tr'+rowAttrs([o.po_no,supName[o.supplier_id],pr.pr_no,pr.quotation_serial,o.status],o.company)+'><td><b>'+esc(o.po_no||'—')+'</b>'+
+          (o.split_flag?'<div class="mini" style="color:var(--amber-ink)">split below threshold</div>':'')+
+          (pr.pr_no?'<div class="mini">from '+esc(pr.pr_no)+(pr.quotation_serial?' · '+esc(pr.quotation_serial):'')+'</div>'+qLabel(pr.quotation_serial):'')+'</td>'+
+          '<td>'+esc(supName[o.supplier_id]||'—')+'</td>'+
           '<td class="num">'+money(o.total)+'</td>'+
           '<td>'+pill(o.status)+'</td>'+
           '<td class="mini">'+(o.hpo_approved_by?'Plant Ops ✓<br>':'')+
@@ -1242,33 +1370,70 @@ function addProduct(sid){
   };
 }
 
-/* ================= 4. MATERIAL REQUESTS ================= */
+/* ================= 4. MATERIAL REQUESTS =================
+   The warehouse's page (Rommel 2026-09-27): every request with its client and project, the lines
+   right on the page, and processing done in place — no pop-up per request. "Needs processing" is
+   the default view for people who issue from the warehouse. */
+var MR_ONLY=null;
 async function viewMR(){
   el('view').innerHTML='<div class="empty">Loading material requests…</div>';
-  var q=await supa.from('adm_material_requests').select('*')
-    .order('created_at',{ascending:false}).limit(200);
-  var rows=q.data||[];
-  el('view').innerHTML='<div class="card"><h3>Material Requests</h3>'+
-    '<p class="sub">A release splits into two streams: <b>warehouse</b> — stocked materials to be '+
-    'withdrawn, and <b>purchase</b> — outsourced and made-to-order items to be bought. '+
-    'Made-to-order lead time is what production plans the start date around.</p>'+
-    (rows.length?'<table><thead><tr><th>MR</th><th>Stream</th><th>Quotation</th><th>Job Order</th>'+
-      '<th>Status</th><th>Authorized</th><th></th></tr></thead><tbody>'+
-      rows.map(function(r){return '<tr>'+
-        '<td><b>'+esc(r.mr_no||'—')+'</b></td>'+
-        '<td>'+(r.stream==='warehouse'
-          ?'<span class="pill p-teal">warehouse</span>':'<span class="pill p-amber">purchase</span>')+'</td>'+
-        '<td>'+esc(r.quotation_serial||'—')+'</td>'+
-        '<td class="mini">'+esc(r.pmes_job_code||'—')+'</td>'+
-        '<td>'+pill(r.status)+'</td>'+
-        '<td class="mini">'+(r.authorized_by?esc(r.authorized_by)+'<br>'+dt(r.authorized_at):'—')+
-          (r.processed_by?'<br><b>Processed</b> '+esc(r.processed_by)+' '+dt(r.processed_at):'')+
-          (r.received_by?'<br><b>Received</b> '+esc(r.received_by)+' '+dt(r.received_at):'')+'</td>'+
-        '<td class="num"><button class="ghost" data-act="mrLines" data-id="'+esc(r.id)+'">Lines</button></td>'+
-      '</tr>'}).join('')+'</tbody></table>'
-     :'<div class="empty">No material requests yet. They are created when you build them on a gate.</div>')+
-    '</div>';
+  var canIssue=!!ME.caps.can_issue;
+  if(MR_ONLY===null) MR_ONLY=canIssue;
+  var q=await supa.from('adm_material_requests').select('*').order('created_at',{ascending:false}).limit(300);
+  if(q.error) throw q.error;
+  var all=q.data||[], rows=MR_ONLY?all.filter(function(r){return ['authorized','partially_issued'].indexOf(r.status)>=0}):all;
+  var ids=rows.map(function(r){return r.id}), lines={};
+  if(ids.length){
+    var lq=await supa.from('adm_mr_lines').select('*').in('mr_id',ids).order('line_no');
+    (lq.data||[]).forEach(function(l){(lines[l.mr_id]=lines[l.mr_id]||[]).push(l)});
+  }
+  var waiting=all.filter(function(r){return ['authorized','partially_issued'].indexOf(r.status)>=0}).length;
+  var h='<div class="card"><h3>Material requests</h3>'+
+    '<p class="sub">Each released job brings its materials: <b>warehouse</b> — stocked items to issue, and <b>purchase</b> — '+
+    'outsourced and made-to-order items, processed when they arrive. The warehouse confirms what it processed here; '+
+    'production confirms what it received in PMES.</p>'+
+    '<div class="row" style="margin-bottom:6px"><label style="display:flex;gap:6px;align-items:center;margin:0;width:auto">'+
+      '<input type="checkbox" id="mrOnly" style="width:auto"'+(MR_ONLY?' checked':'')+'> Needs processing only ('+waiting+')</label></div>'+
+    listBar('mr','Search request, quotation, job, client, item…')+
+    '<div class="mini" data-lfn="mr"></div></div>';
+  h+='<div data-lft="mr">'+(rows.length?rows.map(function(r){
+    var ls=lines[r.id]||[], open=canIssue&&['authorized','partially_issued','issued','partially_received'].indexOf(r.status)>=0;
+    var items=ls.map(function(l){return l.item_name}).join(' ');
+    return '<div class="card"'+rowAttrs([r.mr_no,r.quotation_serial,r.pmes_job_code,r.stream,r.status,items],r.company)+'>'+
+      '<div class="row" style="justify-content:space-between"><div><b>'+esc(r.mr_no||'—')+'</b> '+
+        (r.stream==='warehouse'?'<span class="pill p-teal">warehouse</span>':'<span class="pill p-amber">purchase</span>')+' '+pill(r.status)+
+        '<div class="mini">'+esc(r.quotation_serial||'')+(r.pmes_job_code?' · PMES job '+esc(r.pmes_job_code):'')+' · '+esc(r.company||'')+'</div>'+
+        qLabel(r.quotation_serial)+'</div>'+
+      '<div class="mini" style="text-align:right">'+(r.authorized_by?'Authorized '+dt(r.authorized_at):'')+
+        (r.processed_by?'<br>Processed by '+esc(r.processed_by)+' '+dt(r.processed_at):'')+
+        (r.received_by?'<br>Received by '+esc(r.received_by)+' '+dt(r.received_at):'')+'</div></div>'+
+      '<table style="margin-top:8px"><thead><tr><th>#</th><th>Item</th><th>Unit</th><th class="num">Requested</th><th class="num">Processed</th><th class="num">Received</th><th class="num">Lead</th></tr></thead><tbody>'+
+      ls.map(function(l){return '<tr><td>'+num(l.line_no)+'</td><td>'+esc(l.item_name)+'<div class="mini">'+esc(l.area||'')+'</div></td>'+
+        '<td>'+esc(l.unit||'')+'</td><td class="num">'+num(l.qty)+'</td>'+
+        '<td class="num">'+(open?'<input type="number" class="mri" data-mr="'+esc(r.id)+'" data-line="'+esc(l.id)+'" data-q="'+esc(l.qty)+'" min="'+(+l.qty_received||0)+'" max="'+esc(l.qty)+'" step="any" value="'+(l.qty_issued!=null?l.qty_issued:'')+'" placeholder="0" style="width:90px;text-align:right">':num(l.qty_issued))+'</td>'+
+        '<td class="num">'+num(l.qty_received)+'</td><td class="num">'+(l.mto_lead_days!=null?l.mto_lead_days+'d':'—')+'</td></tr>'}).join('')+
+      '</tbody></table>'+
+      (open?'<div class="row" style="margin-top:10px"><button class="ghost" data-act="mrFillAll" data-id="'+esc(r.id)+'">Fill all as requested</button>'+
+        '<input id="mrNote_'+esc(r.id)+'" placeholder="Note (optional)" style="flex:1;min-width:180px">'+
+        '<button class="primary" data-act="mrProcessInline" data-id="'+esc(r.id)+'">Confirm processed</button></div>'
+       :(!canIssue&&['authorized','partially_issued'].indexOf(r.status)>=0?'<div class="info">Waiting for the warehouse. Only people with the <b>Warehouse issue</b> permission can confirm.</div>':''))+
+    '</div>'}).join('')
+    :'<div class="card"><div class="empty">'+(MR_ONLY?'Nothing waiting to be processed.':'No material requests yet.')+'</div></div>')+'</div>';
+  el('view').innerHTML=h;
+  el('mrOnly').onchange=function(){MR_ONLY=this.checked;render()};
 }
+function mrFillAll(id){document.querySelectorAll('.mri[data-mr="'+id+'"]').forEach(function(i){i.value=i.getAttribute('data-q')})}
+async function mrProcessInline(id){
+  var lines=[], bad=false;
+  document.querySelectorAll('.mri[data-mr="'+id+'"]').forEach(function(i){
+    var v=i.value===''?0:Number(i.value); if(!(v>=0))bad=true; lines.push({id:i.getAttribute('data-line'),qty:v})});
+  if(bad){toast('Enter a quantity for each line (0 if none).','err');return}
+  var r=await supa.rpc('adm_mr_process',{p_mr:id,p_lines:lines,p_note:(el('mrNote_'+id)||{}).value||null});
+  if(r.error){toast(errMsg(r.error),'err');return}
+  toast('Processed — '+String(r.data.status).replace(/_/g,' ')+' ('+num(r.data.issued)+' of '+num(r.data.requested)+').','ok');
+  _needAt=0; render();
+}
+
 /* The MRF after release: the WAREHOUSE confirms what it processed (issued) here — cap can_issue —
    and PRODUCTION confirms what it received in PMES. Quantities are the running totals, partial allowed;
    both steps are recorded in adm_audit_log. */
@@ -1330,7 +1495,8 @@ async function viewBoardReqs(){
     '<p class="sub">Additional boards asked for by production after inspecting what arrived (rejected or defective boards). '+
     'Approved in PMES by a supervisor and a manager before reaching here. <b>Accept</b> raises a warehouse MRF; '+
     '<b>Reject</b> sends it back — production may escalate it to the <b>Head of Plant Operations</b>, whose decision is final.</p>'+
-    (rows.length?'<table><thead><tr><th>Job</th><th>Boards</th><th>Why</th><th>Status</th><th>Trail</th><th></th></tr></thead><tbody>'+
+    (rows.length?listBar('boards','Search job, quotation, client, reason…')+'<div class="mini" data-lfn="boards"></div>'+
+      '<table data-lft="boards"><thead><tr><th>Job</th><th>Boards</th><th>Why</th><th>Status</th><th>Trail</th><th></th></tr></thead><tbody>'+
       rows.map(function(r){
         var trail=[r.supervisor_by&&('Supervisor '+r.supervisor_by),r.manager_by&&('Manager '+r.manager_by),
           r.ks_by&&('KEYSTONE '+r.ks_by+(r.ks_note?': '+r.ks_note:'')),r.escalated_by&&('Escalated by '+r.escalated_by+': '+r.escalate_note),
@@ -1341,23 +1507,27 @@ async function viewBoardReqs(){
         if(r.status==='escalated'&&isHead) act='<button class="primary" data-act="brFinal" data-id="'+esc(r.id)+'" data-ok="1">Approve</button> '+
           '<button data-act="brFinal" data-id="'+esc(r.id)+'" data-ok="0">Reject</button>';
         if(r.status==='escalated'&&!isHead) act='<span class="mini">Waiting for the Head of Plant Operations</span>';
-        return '<tr><td><b>'+esc(r.job_code||'—')+'</b><div class="mini">'+esc(r.quotation_serial||'')+'<br>'+esc(r.company||'')+'</div></td>'+
+        return '<tr'+rowAttrs([r.job_code,r.quotation_serial,r.reason,r.status],r.company)+'><td><b>'+esc(r.job_code||'—')+'</b><div class="mini">'+esc(r.quotation_serial||'')+'<br>'+esc(r.company||'')+'</div>'+qLabel(r.quotation_serial)+'</td>'+
           '<td>'+(r.lines||[]).map(function(l){return num(l.qty)+' × '+esc(l.label);}).join('<br>')+'</td>'+
           '<td>'+esc(r.reason)+'<div class="mini">'+esc(r.created_by_name||r.created_by)+' · '+dt(r.created_at)+'</div></td>'+
           '<td>'+pill(r.status)+'</td><td class="mini">'+trail+'</td><td class="num" style="white-space:nowrap">'+act+'</td></tr>';
       }).join('')+'</tbody></table>'
      :'<div class="empty">No board requests yet.</div>')+'</div>';
 }
-async function brDecide(id,accept){
-  var note=accept?(prompt('Accept — note for production (optional):')||''):(prompt('Why is this request rejected? Production may escalate it to the Head of Plant Operations.')||'').trim();
-  if(!accept&&!note) return;
+function brDecide(id,accept){
+  askText(accept?'Accept board request':'Reject board request',accept?'Note for production':'Why is it rejected',!accept,function(note){_brDecide(id,accept,note)},
+    {sub:accept?'Accepting raises a warehouse material request for the boards.':'Production may escalate a rejection to the Head of Plant Operations.',danger:!accept,ok:accept?'Accept':'Reject'});
+}
+async function _brDecide(id,accept,note){
   var r=await supa.rpc('adm_board_request_decide',{p_req:id,p_accept:accept,p_note:note||null});
   if(r.error){toast(errMsg(r.error),'err');return}
   toast(accept?'Accepted — a warehouse MRF was raised.':'Rejected — production can escalate it.','ok'); render();
 }
-async function brFinal(id,approve){
-  var note=(prompt((approve?'Approve':'Reject')+' — reason for the final decision:')||'').trim();
-  if(!note) return;
+function brFinal(id,approve){
+  askText((approve?'Approve':'Reject')+' — final decision','Reason for the final decision',true,function(note){_brFinal(id,approve,note)},
+    {sub:'As Head of Plant Operations your decision is final.',danger:!approve,ok:approve?'Approve':'Reject'});
+}
+async function _brFinal(id,approve,note){
   var r=await supa.rpc('adm_board_request_final',{p_req:id,p_approve:approve,p_note:note});
   if(r.error){toast(errMsg(r.error),'err');return}
   toast(approve?'Approved — a warehouse MRF was raised.':'Rejected — final.','ok'); render();
@@ -1375,7 +1545,8 @@ async function viewDash(){
   var rel=gates.filter(function(x){return x.gate_status==='released'});
   var pend=gates.filter(function(x){return x.gate_status==='pending_payment'});
   var vou=gates.filter(function(x){return x.gate_status==='vouched'});
-  var prOpen=prs.filter(function(x){return ['canvassing','draft','submitted'].indexOf(x.status)>=0});
+  // Real open statuses (the old list named statuses that do not exist, so the tile under-counted).
+  var prOpen=prs.filter(function(x){return ['draft','pending_manager','pending_hpo'].indexOf(x.status)>=0});
   var prVal=prs.filter(function(x){return x.status==='approved'})
     .reduce(function(a,x){return a+(Number(x.est_total)||0)},0);
 
@@ -1384,7 +1555,24 @@ async function viewDash(){
     .map(function(x){return (new Date(x.released_at)-new Date(x.created_at))/86400000});
   var avgCyc=cyc.length?(cyc.reduce(function(a,b){return a+b},0)/cyc.length):null;
 
+  await refreshNeeds(true);
+  var N=NEED_DETAIL||{};
+  var tiles=[['gates_to_open','Gates to open','client-approved, no payment gate yet','queue'],
+    ['awaiting_payment','Awaiting payment','record a payment or vouch','queue'],
+    ['ready_to_release','Ready to release','terms met — unlock MR + Job Order','queue'],
+    ['pr_to_approve','Requests to approve','purchase requests waiting for you','appr'],
+    ['po_to_approve','Orders to approve','purchase orders waiting for you','appr'],
+    ['my_drafts','My drafts','purchase requests to review and sign','review'],
+    ['po_to_act','Orders to raise or buy','approved requests / orders','po'],
+    ['mr_to_process','Materials to process','warehouse: confirm what was issued','mr'],
+    ['boards_to_decide','Board requests','extra boards waiting for a decision','boards']];
+  var needs=tiles.filter(function(t){return N[t[0]]>0});
   el('view').innerHTML=
+    '<div class="card needs"><h3>Needs you</h3>'+
+    (needs.length?'<p class="sub">What is waiting for you now. Click a tile to go there.</p><div class="grid g4">'+
+      needs.map(function(t){return '<div class="kpi act" data-act="go" data-tab="'+t[3]+'"><div class="lbl">'+esc(t[1])+'</div>'+
+        '<div class="val">'+N[t[0]]+'</div><div class="hint">'+esc(t[2])+'</div></div>'}).join('')+'</div>'
+     :'<div class="empty">Nothing is waiting for you.</div>')+'</div>'+
     '<div class="card"><h3>Dashboard &amp; KPI</h3>'+
     '<p class="sub">Figures below cover only what this app manages. Each gate is shown on its own — '+
     'quotation amounts are never merged into a single combined figure.</p>'+
@@ -1408,7 +1596,7 @@ async function viewDash(){
       (gates.length?'<table><thead><tr><th>Quotation</th><th>Status</th><th class="num">Contract</th>'+
       '<th class="num">Paid</th><th class="num">Balance</th><th>Job Order</th></tr></thead><tbody>'+
       gates.sort(function(a,b){return (b.amount_due||0)-(a.amount_due||0)}).map(function(x){
-        return '<tr><td>'+esc(x.quotation_serial)+'</td><td>'+pill(x.gate_status)+'</td>'+
+        return '<tr><td>'+esc(x.quotation_serial)+qLabel(x.quotation_serial)+'</td><td>'+pill(x.gate_status)+'</td>'+
         '<td class="num">'+money(x.amount_due)+'</td><td class="num">'+money(x.amount_paid)+'</td>'+
         '<td class="num">'+money(x.balance)+'</td>'+
         '<td class="mini">'+esc(x.pmes_job_code||'—')+'</td></tr>'}).join('')+'</tbody></table>'
