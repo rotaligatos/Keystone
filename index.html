@@ -102,6 +102,56 @@ nav.subtabs button{padding:7px 12px;font-size:13px}
 .needs .kpi{cursor:pointer}
 .needs .kpi.act{border-color:var(--amber-ink,#f0b44c)}
 .rtmo-logo{height:44px;width:auto;background:#fff;border-radius:7px;padding:2px 6px;margin-right:12px}
+/* Logistics (HATID view) */
+.lg-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:4px;animation:lgpulse 2s infinite}
+@keyframes lgpulse{50%{opacity:.35}}
+.lg-row{cursor:pointer}
+.lg-badrow td{background:#2c1615}
+.lg-me td{background:#2a2110}
+.kpi.lg-bad{border-color:var(--red)}.kpi.lg-bad .val{color:var(--red-ink)}
+button.lg-sm{padding:4px 10px;font-size:12px}
+a.lg-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;background:var(--accent);color:#fff;text-decoration:none;font-weight:600;font-size:13px;white-space:nowrap}
+a.lg-btn:hover{filter:brightness(1.1)}
+.lg-step{display:inline-block;width:20px;height:20px;line-height:18px;text-align:center;border-radius:50%;border:1px solid var(--line);font-size:11px;color:var(--text2);margin-right:3px}
+.lg-step.on{background:#10261c;border-color:#1f6b47;color:var(--green-ink)}
+.lg-stepper{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}
+.lg-stepper>div{border:1px solid var(--line);border-radius:10px;padding:8px 10px;display:flex;flex-direction:column;gap:2px;background:var(--panel2);font-size:13px}
+.lg-stepper>div.done{border-color:#1f6b47;background:#10261c}.lg-stepper>div.now{border-color:#7a5a17;background:#2a2110}
+.lg-sec{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:10px 0;background:var(--panel2)}
+.lg-sec table td,.lg-sec table th{padding:6px 8px}
+ul.lg-tl{list-style:none;margin:8px 0 0;padding:0 0 0 14px;border-left:2px solid var(--line)}
+ul.lg-tl li{position:relative;padding:4px 0 10px 8px;font-size:13px}
+ul.lg-tl li:before{content:"";position:absolute;left:-21px;top:9px;width:10px;height:10px;border-radius:50%;background:var(--panel2);border:2px solid var(--text2)}
+ul.lg-tl li.ok:before{border-color:var(--green);background:var(--green)}ul.lg-tl li.bad:before{border-color:var(--red);background:var(--red)}
+ul.lg-tl li.unread:before{border-color:var(--amber);background:var(--amber)}
+.lg-mapwrap{display:grid;grid-template-columns:1fr 260px;gap:12px;height:calc(100vh - 260px);min-height:420px}
+#lgMap{border-radius:var(--radius);overflow:hidden;border:1px solid var(--line);min-height:380px}
+.lg-maplist{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:auto}
+.lg-ml{display:flex;gap:9px;align-items:flex-start;padding:8px 10px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px}
+.lg-ml:hover,.lg-ml.on{background:var(--panel2)}
+.lg-dotc{width:10px;height:10px;border-radius:50%;margin-top:5px;flex:none;background:#6b7280}
+.lg-dotc.mv{background:#2ea86b}.lg-dotc.st{background:#4f8cff}.lg-dotc.old,.lg-dotc.none{background:#6b7280}
+.lg-mk{cursor:pointer;display:flex;flex-direction:column;align-items:center}
+.lg-truck{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:#4f8cff;color:#fff;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4);font-size:17px}
+.lg-truck.mv{background:#2ea86b}.lg-truck.old{background:#6b7280}.lg-truck.focus{outline:3px solid #f0b44c}
+.lg-tl-lab{background:#fff;color:#111;font-size:10.5px;font-weight:700;border-radius:4px;padding:0 4px;margin-top:2px;white-space:nowrap}
+.lg-base{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:7px;background:#1e3a5f;color:#fff;border:2px solid #fff;font-size:17px}
+.maplibregl-popup-content{color:#111;font-size:13px}.maplibregl-popup-content a{color:#1d4ed8}
+.lg-msgs{display:grid;grid-template-columns:320px 1fr;gap:12px;margin:14px 0}
+#lgThreads{max-height:70vh;overflow:auto}
+.lg-th{padding:9px 10px;border-radius:8px;cursor:pointer;border-bottom:1px solid var(--line)}
+.lg-th:hover,.lg-th.on{background:var(--panel2)}
+.lg-clip{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lg-bubbles{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.lg-b{max-width:82%;border:1px solid var(--line);border-radius:12px;padding:8px 11px;background:var(--panel2)}
+.lg-b.in{align-self:flex-start;border-color:#186767;background:#0f2626}
+.lg-b.out{align-self:flex-end}
+.lg-body{white-space:pre-wrap;font-size:13px;margin-top:3px}
+.lg-latest-m{display:none;margin-top:4px}
+@media(max-width:640px){.lg-addr,.lg-latest{display:none}.lg-latest-m{display:block}.lg-kpis{grid-template-columns:1fr 1fr}
+  .lg-kpis .kpi{padding:10px}.lg-kpis .kpi .val{font-size:19px}}
+@media(max-width:760px){.lg-mapwrap{grid-template-columns:1fr;height:auto}#lgMap{height:60vh}.lg-maplist{max-height:40vh}
+  .lg-msgs{grid-template-columns:1fr}.lg-stepper{grid-template-columns:repeat(2,1fr)}}
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0f1115">
@@ -278,7 +328,18 @@ var ACTIONS={
   issuePO:function(d){issuePO(d.id)},
   closeModal:function(){closeModal()},
   mrPhoto:function(d){mrPhoto(d.id)},
-  reload:function(){location.reload()}
+  reload:function(){location.reload()},
+  lgRetry:function(){LG.at=0;LG.err='';render()},
+  lgDay:function(d){var n=+d.d, base=LG.date||(LG.ov&&LG.ov.today);
+    if(!n){LG.date=LG.ov&&LG.ov.today}else{var x=new Date(base+'T00:00:00');x.setDate(x.getDate()+n);
+      LG.date=x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0')}
+    render()},
+  lgJob:function(d){lgJob(d.id)},
+  lgSched:function(d){lgSched(d.pool,d.date)},
+  lgMapTruck:function(d){LG.mapFocus=d.id;go('lg_map')},
+  lgFocus:function(d){lgFocusTruck(d.id)},
+  lgThread:function(d){LG.msgOpen=d.id;lgDrawMsgs(true)},
+  lgAlerts:function(){try{Notification.requestPermission().then(function(){render()})}catch(e){}}
 };
 document.addEventListener('click',function(e){
   var t=e.target&&e.target.closest?e.target.closest('[data-act]'):null;
@@ -453,11 +514,14 @@ var GROUPS=[
   {k:'queue', t:'Release Queue', i:'ti-lock-open',     leaves:[['queue','Release queue']]},
   {k:'purch', t:'Purchasing',    i:'ti-file-dollar',   leaves:[['review','My requests'],['appr','Approvals'],['po','Purchase orders'],['src','Suppliers']]},
   {k:'wh',    t:'Warehouse',     i:'ti-package',       leaves:[['mr','Material requests'],['boards','Extra board requests']]},
+  // Rommel 2026-09-28: read-only view of HATID (logistics). Signing stays in HATID.
+  {k:'logi',  t:'Logistics',     i:'ti-truck-delivery',leaves:[['lg_live','Today'],['lg_sched','Delivery schedules'],['lg_map','Map'],['lg_msgs','Client messages']]},
   {k:'more',  t:'More',          i:'ti-dots',          leaves:[['prov','Plant & HRIS']]}
 ];
 var LAST={};
 function groupOf(leaf){for(var i=0;i<GROUPS.length;i++){if(GROUPS[i].leaves.some(function(l){return l[0]===leaf}))return GROUPS[i]}return GROUPS[0]}
 function _badge(n){return n?' <span class="tabcount">'+n+'</span>':''}
+function leafOk(l){return !(l[0]==='lg_msgs'&&LG.me&&!LG.me.messages)}
 function drawTabs(){
   var g=groupOf(TAB);
   el('tabs').innerHTML=GROUPS.map(function(G){
@@ -465,7 +529,7 @@ function drawTabs(){
     return '<button class="'+(g.k===G.k?'on':'')+'" data-act="goGroup" data-g="'+esc(G.k)+'">'+
       '<i class="ti '+G.i+'"></i> '+esc(G.t)+_badge(n)+'</button>'}).join('');
   var st=el('subtabs'); if(!st)return;
-  st.innerHTML=g.leaves.length>1?g.leaves.map(function(l){
+  st.innerHTML=g.leaves.length>1?g.leaves.filter(leafOk).map(function(l){
     return '<button class="'+(TAB===l[0]?'on':'')+'" data-act="go" data-tab="'+esc(l[0])+'">'+esc(l[1])+_badge(NEED[l[0]]||0)+'</button>'}).join(''):'';
   st.style.display=g.leaves.length>1?'':'none';
 }
@@ -505,9 +569,19 @@ async function refreshNeeds(force){
     NEED_DETAIL=d;
     NEED={queue:d.gates_to_open+d.ready_to_release, review:d.my_drafts, appr:d.pr_to_approve+d.po_to_approve,
           po:d.po_to_act, mr:d.mr_to_process, boards:d.boards_to_decide};
+    lgNeedCounts();
     _needAt=Date.now(); _needBusy=null; drawTabs();
+    // Logistics comes from HATID — fetched on its own so a slow HATID never holds up the rest.
+    lgLoad(false).then(function(){lgNeedCounts();drawTabs()}).catch(function(){});
   })().catch(function(){_needBusy=null});
   return _needBusy;
+}
+
+function lgNeedCounts(){
+  if(!LG.ov) return;
+  NEED_DETAIL.sched_to_sign=lgNeedsMe().length;
+  NEED_DETAIL.msgs_unread=LG.ov.unread_msgs||0;
+  NEED.lg_sched=NEED_DETAIL.sched_to_sign; NEED.lg_msgs=NEED_DETAIL.msgs_unread;
 }
 
 /* Search + company filter for a list. Rows carry data-s (text to search) and data-co (W/M/C key);
@@ -590,7 +664,9 @@ function render(){
     'What you can see and do here follows your KEYSTONE role.</p></div>';return}
   var fn = TAB==='review'?viewReview : TAB==='appr'?viewApprovals : TAB==='po'?viewPO
          : TAB==='queue'?viewQueue : TAB==='src'?viewSourcing
-         : TAB==='mr'?viewMR : TAB==='boards'?viewBoardReqs : TAB==='dash'?viewDash : viewProv;
+         : TAB==='mr'?viewMR : TAB==='boards'?viewBoardReqs : TAB==='dash'?viewDash
+         : TAB==='lg_live'?viewLgLive : TAB==='lg_sched'?viewLgSched : TAB==='lg_map'?viewLgMap : TAB==='lg_msgs'?viewLgMsgs : viewProv;
+  if(!/^lg_/.test(TAB)) clearInterval(_lgTimer);
   // A screen that fails must say why. Silence here reads as "the app is broken".
   // After an action the screen re-renders; stay where the person was instead of jumping to the top.
   var keepY=(render._tab===TAB)?window.scrollY:0; render._tab=TAB;
@@ -1590,7 +1666,10 @@ async function viewDash(){
     ['my_drafts','My drafts','purchase requests to review and sign','review'],
     ['po_to_act','Orders to raise or buy','approved requests / orders','po'],
     ['mr_to_process','Materials to process','warehouse: confirm what was issued','mr'],
-    ['boards_to_decide','Extra board requests','extra boards waiting for a decision','boards']];
+    ['boards_to_decide','Extra board requests','extra boards waiting for a decision','boards'],
+    ['sched_to_sign','Schedules to sign','delivery schedules waiting for your signature','lg_sched'],
+    ['msgs_unread','Client replies','unread client messages in HATID','lg_msgs']];
+  try{ await Promise.race([lgLoad(false,LG.ov?LG.ov.today:null),new Promise(function(ok){setTimeout(ok,4000)})]); lgNeedCounts() }catch(e){}
   var needs=tiles.filter(function(t){return N[t[0]]>0});
   el('view').innerHTML=
     '<div class="card needs"><h3>Needs you</h3>'+
@@ -1598,6 +1677,7 @@ async function viewDash(){
       needs.map(function(t){return '<div class="kpi act" data-act="go" data-tab="'+t[3]+'"><div class="lbl">'+esc(t[1])+'</div>'+
         '<div class="val">'+N[t[0]]+'</div><div class="hint">'+esc(t[2])+'</div></div>'}).join('')+'</div>'
      :'<div class="empty">Nothing is waiting for you.</div>')+'</div>'+
+    lgDashCard()+
     '<div class="card"><h3>Dashboard &amp; KPI</h3>'+
     '<p class="sub">Figures below cover only what this app manages. Each gate is shown on its own — '+
     'quotation amounts are never merged into a single combined figure.</p>'+
@@ -1632,19 +1712,12 @@ async function viewDash(){
 
 /* ================= 6. PROVISIONS ================= */
 async function viewProv(){
-  var d=await supa.from('adm_deliveries').select('*').order('scheduled_at').limit(100);
   var rr=await supa.from('adm_room_reservations').select('*').order('starts_at').limit(50);
   var hr=await supa.from('adm_hris_feed').select('*').order('received_at',{ascending:false}).limit(50);
   el('view').innerHTML=
     '<div class="card"><h3>Delivery schedule</h3>'+
-      '<p class="sub">Inbound supplier deliveries and outbound shipments.</p>'+
-      ((d.data||[]).length?'<table><thead><tr><th>When</th><th>Description</th><th>Kind</th>'+
-        '<th>Truck</th><th>Status</th></tr></thead><tbody>'+
-        d.data.map(function(x){return '<tr><td>'+dt(x.scheduled_at)+'</td>'+
-          '<td>'+esc(x.description||'')+'<div class="mini">'+esc(x.quotation_serial||'')+'</div></td>'+
-          '<td class="mini">'+esc(x.kind)+'</td><td class="mini">'+esc(x.truck||'—')+'</td>'+
-          '<td>'+pill(x.status)+'</td></tr>'}).join('')+'</tbody></table>'
-       :'<div class="empty">No deliveries scheduled yet.</div>')+'</div>'+
+      '<p class="sub">Outbound delivery schedules now come live from HATID — see <b>Logistics</b>.</p>'+
+      '<button class="primary" data-act="go" data-tab="lg_sched"><i class="ti ti-truck-delivery"></i> Open delivery schedules</button></div>'+
 
     '<div class="card"><h3>HRIS <span class="pill p-amber">provision</span></h3>'+
       '<p class="sub">HRIS is not built yet. This is the landing table it will feed — attendance, '+
@@ -1671,6 +1744,467 @@ async function viewProv(){
       'from for outsourced materials and hardware costs. This is the first real supplier-cost data '+
       'in the system — Modcraft currently assumes a flat 30% material margin because no cost data '+
       'existed.</div></div>';
+}
+
+/* ================= 7. LOGISTICS (read-only view of HATID) =================
+   Rommel 2026-09-28: KEYSTONE is the overall view of every area of operation, so it shows HATID's
+   delivery schedules (and the confirmations waiting for you), today's deliveries as they happen,
+   the trucks on a map, and the client messages — read-only. Signing stays in HATID (one tap away)
+   so there is a single signature trail with its passcode.
+   HATID is a separate Supabase project with its own sign-in. KEYSTONE never reads its tables:
+   the keystone-feed function on HATID's side checks this person's KEYSTONE sign-in against
+   KEYSTONE's own database, limits the data to the companies they cover here, and leaves out all
+   costs, order values and rates. */
+var HATID_FEED='https://nssviuuagtlvxjvvvagt.supabase.co/functions/v1/keystone-feed';
+var HATID_APP='https://rotaligatos.github.io/modcraft-app/hatid.html';
+var LG={ov:null,at:0,err:'',busy:null,me:null,date:null,f:{q:'',co:'',pool:''},msgs:null,msgOpen:null,seenNeeds:null,map:null};
+
+var LG_STATUS={scheduled:['Scheduled','p-blue'],dispatched:['On the road','p-amber'],in_progress:['On site','p-amber'],
+  completed:['Delivered','p-green'],issue:['Problem','p-red'],proposed:['Proposed','p-grey'],rejected:['Rejected','p-grey']};
+var LG_OUTCOME={full:['Delivered','p-green'],partial:['Partial','p-amber'],returned:['Refused','p-red']};
+var LG_EVENT={proposed:'Proposed',scheduled:'Scheduled',rejected:'Rejected',dispatched:'Departed',arrived:'Arrived on site',
+  completed:'Delivery result',issue:'Problem reported',delay:'Delay reported'};
+var LG_DELAY={site_not_ready:'Site not ready',client_absent:'Receiver not available',access:'No access / gate pass / permit',
+  unloading:'Waiting to unload',traffic:'Traffic / road closure',truck:'Truck problem',weather:'Weather',other:'Other'};
+var LG_ISSUE={breakdown:'Truck breakdown',accident:'Accident',traffic_violation:'Traffic violation',wrong_items:'Wrong or missing items',
+  damaged:'Damaged items',site_refused:'Site refused / can’t unload',other:'Other problem'};
+var LG_SCHED={draft:['Draft','p-grey'],for_review:['For review','p-amber'],for_confirmation:['For confirmation','p-amber'],
+  for_approval:['For approval','p-amber'],approved:['Approved','p-green'],returned:['Returned for revision','p-red']};
+var LG_STEPS=[['prepare','Prepared','Dispatcher / FG Scheduler'],['review','Reviewed','Logistics Supervisor'],
+  ['confirm','Confirmed','Admin Office Supervisor'],['approve','Approved','SCM / Logistics Manager']];
+var LG_STEP_FOR={for_review:'review',for_confirmation:'confirm',for_approval:'approve'};
+var LG_VERB={review:'review',confirm:'confirmation',approve:'approval'};
+var LG_OB={delivered:'Delivered',partial:'Partial',returned:'Refused',issue:'Problem',delay:'Delay',daily:'Daily summary',
+  daily_auto:'Daily summary',sched_client:'Schedule confirmation',sched_agent:'Schedule → agent',manual:'Message'};
+var LG_CH={chat:'Google Chat',email:'Email',sms:'SMS'};
+var LG_CO={WCLI:'World Class Laminate',MSSI:'Module Systems',CWLI:'Cebu World Laminate'};
+
+function lgPill(map,k,fallback){var x=map[k];return '<span class="pill '+(x?x[1]:'p-grey')+'">'+esc(x?x[0]:(fallback||k||'—'))+'</span>'}
+function lgJobPill(j){return j.status==='completed'&&j.outcome&&LG_OUTCOME[j.outcome]?lgPill(LG_OUTCOME,j.outcome):lgPill(LG_STATUS,j.status)}
+function lgTime(s){if(!s)return '—';return new Date(s).toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit',timeZone:'Asia/Manila'})}
+function lgDT(s){if(!s)return '—';return new Date(s).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:'Asia/Manila'})}
+function lgDay(d){if(!d)return '—';return new Date(d+'T00:00:00').toLocaleDateString('en-PH',{weekday:'short',month:'short',day:'numeric',year:'numeric'})}
+function lgHHMM(t){if(!t)return '';var p=String(t).split(':'),h=+p[0],m=p[1];return (h%12||12)+':'+m+(h<12?' AM':' PM')}
+function lgAgo(s){if(!s)return '';var m=Math.round((Date.now()-new Date(s))/60000);
+  return m<1?'just now':m<60?m+' min ago':m<1440?Math.floor(m/60)+' h '+(m%60)+' min ago':lgDT(s)}
+function lgEvText(e){if(!e)return '';var t=LG_EVENT[e.type]||e.type;
+  if(e.type==='delay'&&e.delay)t+=' — '+(LG_DELAY[e.delay]||e.delay);
+  if(e.type==='issue'&&e.issue)t+=' — '+(LG_ISSUE[e.issue]||e.issue);
+  return t}
+
+/* One call to HATID. Retries twice on its own (network hiccups), then says what went wrong. */
+async function lgCall(what,args){
+  var s=await supa.auth.getSession(); var tok=s.data.session&&s.data.session.access_token;
+  if(!tok) throw new Error('Sign in again to see logistics.');
+  var last;
+  for(var i=0;i<3;i++){
+    try{
+      var r=await fetch(HATID_FEED,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+tok},
+        body:JSON.stringify({what:what,args:args||{}})});
+      var j=await r.json().catch(function(){return {}});
+      if(r.ok){LG.me=j.me||LG.me;return j.data}
+      last=new Error(j.error||('HATID answered '+r.status));
+      if(r.status<500) throw last;          // a clear "no" — retrying will not change it
+    }catch(e){last=e; if(e&&e.message&&/sign|verified|company|can.t see|not open/i.test(e.message)) throw e}
+    await new Promise(function(ok){setTimeout(ok,700*(i+1))});
+  }
+  throw last||new Error('Could not reach HATID.');
+}
+
+/* The overview (schedules, today's jobs, trucks, notifications) — shared by every logistics screen,
+   the tab counts and the dashboard. At most every 25 s unless forced. */
+async function lgLoad(force,date){
+  var want=date||LG.date||null;
+  if(!force&&LG.ov&&Date.now()-LG.at<25000&&(!want||LG.ov.date===want)) return LG.ov;
+  if(LG.busy) return LG.busy;
+  LG.busy=(async function(){
+    try{ var ov=await lgCall('overview',want?{date:want}:{}); LG.ov=ov; LG.at=Date.now(); LG.err='';
+      if(!LG.date) LG.date=ov.today; lgNotifyNew(); return ov; }
+    catch(e){ LG.err=errMsg(e); throw e; }
+    finally{ LG.busy=null; }
+  })();
+  return LG.busy;
+}
+function lgNeedsMe(){return ((LG.ov&&LG.ov.schedules)||[]).filter(function(s){return s.needs_me})}
+
+/* A new confirmation request lands while KEYSTONE is open → say so (and a desktop alert if allowed). */
+function lgNotifyNew(){
+  var ids=lgNeedsMe().map(function(s){return s.id+':'+s.revision+':'+s.status});
+  if(LG.seenNeeds){
+    var fresh=ids.filter(function(k){return LG.seenNeeds.indexOf(k)<0});
+    if(fresh.length){
+      var msg=fresh.length===1?'A delivery schedule is waiting for your signature in HATID.':fresh.length+' delivery schedules are waiting for your signature in HATID.';
+      toast(msg,'ok');
+      try{ if(window.Notification&&Notification.permission==='granted') new Notification('KEYSTONE — Logistics',{body:msg,icon:'icons/icon-192.png'}) }catch(e){}
+    }
+  }
+  LG.seenNeeds=ids;
+}
+function lgAlertsBtn(){
+  if(!window.Notification||Notification.permission==='granted'||Notification.permission==='denied') return '';
+  return '<button class="ghost" data-act="lgAlerts"><i class="ti ti-bell"></i> Alert me on this computer</button>';
+}
+function lgHatidLink(pool,date,label){
+  return '<a class="lg-btn" target="_blank" rel="noopener" href="'+esc(HATID_APP+(pool&&date?'#sched='+encodeURIComponent(pool+'|'+date):''))+'">'+
+    '<i class="ti ti-external-link"></i> '+esc(label||'Open in HATID')+'</a>';
+}
+function lgPoolName(id){var p=((LG.ov&&LG.ov.pools)||[]).filter(function(x){return x.id===id})[0];return p?p.name:'—'}
+
+/* Keep the open logistics screen live: refresh every 30 s while it is showing. */
+var _lgTimer=null;
+function lgLive(fn){
+  clearInterval(_lgTimer);
+  _lgTimer=setInterval(function(){
+    if(!/^lg_/.test(TAB)||document.hidden){return}
+    fn();
+  },30000);
+}
+document.addEventListener('visibilitychange',function(){ if(!document.hidden&&/^lg_/.test(TAB)) render() });
+
+function lgFail(e){
+  el('view').innerHTML='<div class="card"><h3>Logistics could not load</h3><p class="sub">KEYSTONE reads this from HATID. '+
+    'The rest of KEYSTONE still works.</p><pre class="prev">'+esc(errMsg(e))+'</pre>'+
+    '<button class="primary" data-act="lgRetry">Try again</button></div>';
+}
+function lgUpdated(){return '<span class="mini" id="lgUpd"><span class="lg-dot"></span> Live · updated '+esc(lgTime(new Date(LG.at).toISOString()))+'</span>'}
+
+/* ---------- TODAY: every drop of the day, grouped by truck and trip, as it happens ---------- */
+async function viewLgLive(){
+  if(!LG.ov) el('view').innerHTML='<div class="empty">Loading today’s deliveries from HATID…</div>';
+  try{ await lgLoad(false,LG.date) }catch(e){ return lgFail(e) }
+  var ov=LG.ov, f=LG.f;
+  var cos=(LG.me&&LG.me.companies)||['WCLI','MSSI','CWLI'];
+  el('view').innerHTML=
+    '<div class="card"><div class="row" style="justify-content:space-between"><div><h3>Deliveries · '+esc(lgDay(ov.date))+'</h3>'+
+      '<p class="sub" style="margin:0">From HATID, as the drivers report it. Tap a drop for its full history'+(LG.me&&LG.me.messages?' and client messages':'')+'.</p></div>'+
+      lgUpdated()+'</div>'+
+    '<div class="row" style="margin-top:12px">'+
+      '<button class="ghost" data-act="lgDay" data-d="-1" title="Previous day"><i class="ti ti-chevron-left"></i></button>'+
+      '<input type="date" id="lgDate" value="'+esc(ov.date)+'" style="width:auto">'+
+      '<button class="ghost" data-act="lgDay" data-d="1" title="Next day"><i class="ti ti-chevron-right"></i></button>'+
+      (ov.date!==ov.today?'<button class="ghost" data-act="lgDay" data-d="0">Today</button>':'')+
+      '<input id="lgQ" placeholder="Search client, SO, truck, address…" value="'+esc(f.q)+'" style="flex:1;min-width:200px">'+
+      (cos.length>1?'<select id="lgCo" style="width:auto"><option value="">All companies</option>'+cos.map(function(c){
+        return '<option value="'+c+'"'+(f.co===c?' selected':'')+'>'+esc(LG_CO[c]||c)+'</option>'}).join('')+'</select>':'')+
+      ((ov.pools||[]).length>1?'<select id="lgPool" style="width:auto"><option value="">All plants</option>'+ov.pools.map(function(p){
+        return '<option value="'+esc(p.id)+'"'+(f.pool===p.id?' selected':'')+'>'+esc(p.name)+'</option>'}).join('')+'</select>':'')+
+    '</div></div>'+
+    '<div id="lgKpi"></div><div id="lgBody"></div>';
+  el('lgDate').onchange=function(){LG.date=this.value||ov.today;render()};
+  el('lgQ').oninput=function(){f.q=this.value;lgDrawLive()};
+  if(el('lgCo')) el('lgCo').onchange=function(){f.co=this.value;lgDrawLive()};
+  if(el('lgPool')) el('lgPool').onchange=function(){f.pool=this.value;lgDrawLive()};
+  lgDrawLive();
+  lgLive(async function(){ try{ await lgLoad(true,LG.date); lgDrawLive(); var u=el('lgUpd'); if(u) u.outerHTML=lgUpdated(); }catch(e){} });
+}
+function lgDrawLive(){
+  var ov=LG.ov, f=LG.f; if(!ov||!el('lgBody')) return;
+  var words=f.q.toLowerCase().split(/\s+/).filter(Boolean);
+  var jobs=(ov.jobs||[]).filter(function(j){
+    if(f.co&&j.company!==f.co) return false;
+    if(f.pool&&j.pool_id!==f.pool) return false;
+    var hay=[j.client,j.serial,j.so,j.truck,j.plate,j.address,j.province,j.agent].join(' ').toLowerCase();
+    return words.every(function(w){return hay.indexOf(w)>=0});
+  });
+  var trips={}; (ov.trips||[]).forEach(function(t){trips[t.truck_id+'|'+t.trip_no]=t});
+  var trucks={}; (ov.trucks||[]).forEach(function(t){trucks[t.id]=t});
+  var done=jobs.filter(function(j){return j.status==='completed'}).length;
+  var probs=jobs.filter(function(j){return j.status==='issue'||(j.last&&(j.last.type==='issue'||j.last.type==='delay')&&j.status!=='completed')}).length;
+  var outTrips=(ov.trips||[]).filter(function(t){return t.departed_at&&!t.back_at&&jobs.some(function(j){return j.truck_id===t.truck_id&&j.trip_no===t.trip_no})}).length;
+  var truckN=Object.keys(jobs.reduce(function(a,j){if(j.truck_id)a[j.truck_id]=1;return a},{})).length;
+  el('lgKpi').innerHTML='<div class="grid g4 lg-kpis">'+
+    kpi('Drops',jobs.length,truckN+' truck'+(truckN===1?'':'s'))+
+    kpi('On the road',outTrips,'trips out now')+
+    kpi('Delivered',done,jobs.length?Math.round(done/jobs.length*100)+'% of the day':'')+
+    '<div class="kpi'+(probs?' lg-bad':'')+'"><div class="lbl">Problems &amp; delays</div><div class="val">'+probs+'</div><div class="hint">'+(probs?'see the red rows below':'none reported')+'</div></div>'+
+  '</div>';
+  if(!jobs.length){ el('lgBody').innerHTML='<div class="card"><div class="empty">'+((ov.jobs||[]).length?'Nothing matches the filters.':'No deliveries on this date.')+'</div></div>'; return }
+  var groups=[], gi={};
+  jobs.forEach(function(j){var k=(j.truck_id||'none')+'|'+j.trip_no; if(!gi[k]){gi[k]={k:k,truck_id:j.truck_id,trip_no:j.trip_no,truck:j.truck,plate:j.plate,jobs:[]};groups.push(gi[k])} gi[k].jobs.push(j)});
+  el('lgBody').innerHTML=groups.map(function(g){
+    var t=trips[g.truck_id+'|'+g.trip_no], tk=trucks[g.truck_id]||{}, pos=tk.pos;
+    var left=t&&t.departed_at?'Left '+lgTime(t.departed_at)+(t.gps?' <span class="mini">(GPS)</span>':' <span class="mini">(tapped)</span>'):
+      'Not left yet'+(t&&t.target?' · leave by '+esc(lgHHMM(t.target)):'');
+    var back=t&&t.back_at?' · back '+lgTime(t.back_at):'';
+    var late=t&&t.late_reason?' <span class="pill p-amber">late: '+esc(String(t.late_reason).replace(/^ld_/,'').replace(/_/g,' '))+'</span>':'';
+    var trk=!g.truck_id?'':pos?'<span class="mini">📍 seen '+esc(lgAgo(pos.at))+(pos.speed>=5?' · '+Math.round(pos.speed)+' km/h':'')+'</span>'+
+      ' <button class="ghost lg-sm" data-act="lgMapTruck" data-id="'+esc(g.truck_id)+'">Map</button>':
+      '<span class="mini">'+(tk.tracked?'tracker silent':'no tracker')+'</span>';
+    return '<div class="card lg-trip"><div class="row" style="justify-content:space-between">'+
+      '<div><b><i class="ti ti-truck"></i> '+esc(g.truck||'No truck yet')+'</b>'+(g.truck_id&&g.plate&&g.plate!==g.truck?' <span class="mini">'+esc(g.plate)+'</span>':'')+
+        (g.truck_id?' <span class="pill p-grey">Trip '+g.trip_no+'</span>':'')+(t&&t.ticket?' <span class="mini">#'+esc(t.ticket)+'</span>':'')+'</div>'+
+      '<div class="mini" style="text-align:right">'+(g.truck_id?left+back+late:'')+'<br>'+trk+'</div></div>'+
+      '<table style="margin-top:8px"><thead><tr><th style="width:34px">#</th><th>Client</th><th class="lg-addr">Address</th><th>Status</th><th class="lg-latest">Latest</th></tr></thead><tbody>'+
+      g.jobs.map(function(j,i){
+        var bad=j.status==='issue'||(j.last&&(j.last.type==='issue'||j.last.type==='delay')&&j.status!=='completed');
+        return '<tr class="lg-row'+(bad?' lg-badrow':'')+'" data-act="lgJob" data-id="'+esc(j.id)+'">'+
+          '<td class="mini">'+(j.drop_seq||i+1)+'</td>'+
+          '<td><b>'+esc(j.client||'—')+'</b><div class="mini">'+esc(j.serial||'')+(j.so?' · SO '+esc(j.so):'')+' · '+esc(j.company)+(j.job_type&&j.job_type!=='delivery'?' · '+esc(j.job_type):'')+'</div></td>'+
+          '<td class="mini lg-addr">'+esc(j.address||'')+(j.province?'<br>'+esc(j.province):'')+'</td>'+
+          '<td>'+lgJobPill(j)+'<div class="mini lg-latest-m">'+(j.last?esc(lgEvText(j.last))+' · '+esc(lgTime(j.last.at)):'')+'</div></td>'+
+          '<td class="mini lg-latest">'+(j.last?esc(lgEvText(j.last))+'<br>'+esc(lgTime(j.last.at))+(j.last.by?' · '+esc(j.last.by):''):'—')+'</td></tr>'}).join('')+
+      '</tbody></table></div>'}).join('');
+}
+
+/* One drop: what happened, in order, and the messages to/from the client. */
+async function lgJob(id){
+  openModal('<h3>Delivery</h3><div class="empty">Loading…</div>');
+  var d; try{ d=await lgCall('job',{id:id}) }catch(e){ openModal('<h3>Delivery</h3><div class="warn">'+esc(errMsg(e))+'</div><div class="row right"><button data-act="closeModal">Close</button></div>'); return }
+  var j=d.job||{}, refs=Array.isArray(j.doc_refs)?j.doc_refs.filter(function(r){return r&&r.ref}):[];
+  openModal('<div class="row" style="justify-content:space-between"><h3 style="margin:0">'+esc(j.client||'Delivery')+'</h3>'+lgJobPill(j)+'</div>'+
+    '<p class="sub">'+esc(j.serial||'')+' · '+esc(j.company||'')+' · '+esc(lgDay(j.date))+(j.truck?' · '+esc(j.truck)+' trip '+j.trip_no:'')+'</p>'+
+    '<table>'+
+      _pvRow('Address',esc(j.address||'—')+(j.province?', '+esc(j.province):''))+
+      (refs.length?_pvRow('Documents',refs.map(function(r){return esc(r.ref)+(r.remarks?' ('+esc(r.remarks)+')':'')}).join(', ')):'')+
+      (j.dr_no?_pvRow('DR / SI',esc(j.dr_no)):'')+
+      (j.weight?_pvRow('Weight',num(j.weight)+' kg'):'')+
+      (j.agent?_pvRow('Sales agent',esc(j.agent)):'')+
+      (j.contact||j.phone?_pvRow('Client contact',esc([j.contact,j.phone].filter(Boolean).join(' · '))):'')+
+      (j.received_by?_pvRow('Received by',esc(j.received_by)):'')+
+      (j.notes?_pvRow('Notes',esc(j.notes)):'')+
+    '</table>'+
+    '<h3 style="margin-top:16px;font-size:14px">What happened</h3>'+
+    ((d.events||[]).length?'<ul class="lg-tl">'+d.events.map(function(e){
+      return '<li class="'+(e.type==='issue'||e.type==='delay'?'bad':e.type==='completed'?'ok':'')+'"><b>'+esc(lgEvText(e))+'</b> <span class="mini">'+esc(lgDT(e.at))+
+        (e.by?' · '+esc(e.by):'')+'</span>'+(e.notes?'<div>'+esc(e.notes)+'</div>':'')+
+        (e.photo?'<div class="mini">📷 photo in HATID</div>':'')+'</li>'}).join('')+'</ul>':'<div class="mini">Nothing reported yet.</div>')+
+    (d.messages?'<h3 style="margin-top:16px;font-size:14px">Messages</h3>'+lgThreadHtml(d.messages):'')+
+    (j.lat!=null&&j.lon!=null?'<p class="mini" style="margin-top:10px"><a target="_blank" rel="noopener" href="https://www.google.com/maps?q='+encodeURIComponent(j.lat+','+j.lon)+'">Open the site in Google Maps</a></p>':'')+
+    '<div class="row right" style="margin-top:14px">'+lgHatidLink(null,null,'Open HATID')+'<button data-act="closeModal">Close</button></div>');
+}
+
+/* ---------- DELIVERY SCHEDULES: FO-LGTS-02 and its sign-offs ---------- */
+async function viewLgSched(){
+  if(!LG.ov) el('view').innerHTML='<div class="empty">Loading delivery schedules from HATID…</div>';
+  try{ await lgLoad(false) }catch(e){ return lgFail(e) }
+  lgDrawSched();
+  lgLive(async function(){ try{ await lgLoad(true); lgDrawSched() }catch(e){} });
+}
+function lgDrawSched(){
+  var ov=LG.ov, mine=lgNeedsMe(), st=ov.staff;
+  var list=(ov.schedules||[]).slice(), un=ov.unprepared||[];
+  var notes=(ov.notifications||[]).slice(0,12);
+  el('view').innerHTML=
+    '<div class="card needs"><div class="row" style="justify-content:space-between"><h3>Waiting for your signature</h3>'+lgUpdated()+'</div>'+
+    (st?'<p class="sub">You sign delivery schedules in HATID as <b>'+esc(st.name)+'</b>'+
+        ((st.steps||[]).length?' — your step'+(st.steps.length>1?'s':'')+': '+esc(st.steps.map(function(s){return LG_VERB[s]||s}).join(', ')):' (no signing step assigned)')+'.</p>'
+      :'<p class="sub">Your KEYSTONE account is not a HATID signer, so nothing waits for you here. You can still view every schedule below.</p>')+
+    (mine.length?'<div class="grid g2">'+mine.map(function(s){
+      return '<div class="kpi act"><div class="lbl">'+esc(s.pool)+' · rev '+s.revision+'</div><div class="val" style="font-size:18px">'+esc(lgDay(s.date))+'</div>'+
+        '<div class="hint">Waiting for your '+esc(LG_VERB[LG_STEP_FOR[s.status]]||'signature')+'</div>'+
+        '<div class="row" style="margin-top:10px"><button class="ghost lg-sm" data-act="lgSched" data-pool="'+esc(s.pool_id)+'" data-date="'+esc(s.date)+'">View</button>'+
+        lgHatidLink(s.pool_id,s.date,'Sign in HATID')+'</div></div>'}).join('')+'</div>'
+      :'<div class="empty" style="padding:14px">'+(st?'Nothing is waiting for you.':'—')+'</div>')+
+    '<div class="row" style="margin-top:6px">'+lgAlertsBtn()+'</div></div>'+
+
+    '<div class="card"><h3>Delivery schedules</h3><p class="sub">Three weeks back and ahead. Tap a schedule to see it.</p>'+
+    (un.length||list.length?'<table><thead><tr><th>Delivery date</th><th>Plant</th><th>Status</th><th>Signed</th><th>Updated</th></tr></thead><tbody>'+
+      un.map(function(u){return '<tr class="lg-row" data-act="lgSched" data-pool="'+esc(u.pool_id)+'" data-date="'+esc(u.date)+'">'+
+        '<td>'+esc(lgDay(u.date))+'</td><td>'+esc(lgPoolName(u.pool_id))+'</td><td><span class="pill p-grey">Not prepared yet</span></td>'+
+        '<td class="mini">'+u.n+' drop'+(u.n===1?'':'s')+' confirmed</td><td class="mini">—</td></tr>'}).join('')+
+      list.map(function(s){
+        var signed=LG_STEPS.map(function(x){var g=(s.signs||[]).filter(function(y){return y.step===x[0]})[0];
+          return '<span title="'+esc(x[1]+(g?' by '+g.name:''))+'" class="lg-step'+(g?' on':'')+'">'+esc(x[1][0])+'</span>'}).join('');
+        return '<tr class="lg-row'+(s.needs_me?' lg-me':'')+'" data-act="lgSched" data-pool="'+esc(s.pool_id)+'" data-date="'+esc(s.date)+'">'+
+          '<td>'+esc(lgDay(s.date))+(s.needs_me?' <span class="tabcount">you</span>':'')+'</td><td>'+esc(s.pool)+'</td>'+
+          '<td>'+lgPill(LG_SCHED,s.status)+(s.status==='returned'&&s.return_reason?'<div class="mini">'+esc(s.return_reason)+'</div>':'')+'</td>'+
+          '<td>'+signed+'</td><td class="mini">'+esc(lgDT(s.updated_at))+'</td></tr>'}).join('')+'</tbody></table>'
+      :'<div class="empty">No delivery schedules in this period.</div>')+'</div>'+
+
+    (st?'<div class="card"><h3>Your HATID notifications</h3><p class="sub">The same alerts HATID shows you — schedule submitted, signed, returned, approved.</p>'+
+      (notes.length?'<ul class="lg-tl">'+notes.map(function(n){return '<li class="'+(n.read?'':'unread')+'"><b>'+esc(n.title||'')+'</b> <span class="mini">'+esc(lgDT(n.at))+'</span>'+
+        (n.body?'<div>'+esc(n.body)+'</div>':'')+
+        (n.ref_pool&&n.ref_date?'<div><a href="#" data-act="lgSched" data-pool="'+esc(n.ref_pool)+'" data-date="'+esc(n.ref_date)+'">View schedule</a></div>':'')+'</li>'}).join('')+'</ul>'
+        :'<div class="empty">No notifications.</div>')+'</div>':'');
+}
+async function lgSched(pool,date){
+  openModal('<h3>Delivery schedule</h3><div class="empty">Loading…</div>');
+  el('modalBox').style.width='min(1100px,100%)';
+  var d; try{ d=await lgCall('schedule',{pool:pool,date:date}) }catch(e){ openModal('<h3>Delivery schedule</h3><div class="warn">'+esc(errMsg(e))+'</div><div class="row right"><button data-act="closeModal">Close</button></div>'); return }
+  var s=d.schedule, status=s?s.status:'draft', inFlow=!!LG_STEP_FOR[status]||status==='approved';
+  var content=inFlow?(d.snapshot||[]):(d.live||[]);
+  var changed=inFlow&&JSON.stringify(d.snapshot||[])!==JSON.stringify(d.live||[]);
+  var stepNow=LG_STEP_FOR[status], mine=(d.my_steps||[]).indexOf(stepNow)>=0&&!(d.signs||[]).some(function(g){return g.mine});
+  var signs=inFlow?(d.signs||[]):[];
+  var stepper='<div class="lg-stepper">'+LG_STEPS.map(function(x){var g=signs.filter(function(y){return y.step===x[0]})[0];
+    var now=(x[0]==='prepare'&&!inFlow)||x[0]===stepNow;
+    return '<div class="'+(g?'done':now?'now':'')+'"><b>'+esc(x[1])+'</b><span>'+(g?esc(g.name):now?'Waiting':'—')+'</span>'+
+      '<span class="mini">'+(g?esc(lgDT(g.at)):esc(x[2]))+'</span></div>'}).join('')+'</div>';
+  var secs=content.map(function(sec){
+    var over=Number(sec.capacity)&&Number(sec.total_weight)>Number(sec.capacity);
+    return '<div class="lg-sec"><div class="row" style="justify-content:space-between"><b><i class="ti ti-truck"></i> '+esc(sec.label||'')+
+        (sec.plate_no&&sec.plate_no!==sec.label?' · '+esc(sec.plate_no):'')+' · Trip '+esc(sec.trip_no)+(sec.coded?' <span class="pill p-amber">coding</span>':'')+'</b>'+
+      '<span class="mini">Driver: '+esc(sec.driver||'—')+' · Helper: '+esc(sec.helper||'—')+(sec.contact_no?' · '+esc(sec.contact_no):'')+'</span></div>'+
+      '<div class="mini">Capacity '+(sec.capacity?num(sec.capacity)+' kg':'—')+' · Total weight <b'+(over?' style="color:var(--red-ink)"':'')+'>'+num(Math.round(Number(sec.total_weight||0)))+' kg'+(over?' ⚠ over capacity':'')+'</b></div>'+
+      '<table style="margin-top:6px"><thead><tr><th>#</th><th>Customer</th><th>Address</th><th>Sales agent</th><th>Doc. reference</th><th class="num">Weight</th></tr></thead><tbody>'+
+      (sec.drops||[]).map(function(dr,i){
+        var refs=(Array.isArray(dr.doc_refs)?dr.doc_refs:[]).filter(function(r){return r&&(r.ref||r.remarks)});
+        return '<tr><td class="mini">'+(i+1)+'</td><td><b>'+esc(dr.customer||dr.serial)+'</b><div class="mini">'+esc(dr.serial||'')+' · '+esc(dr.company||'')+
+          (dr.job_type&&dr.job_type!=='delivery'?' · '+esc(dr.job_type):'')+'</div></td><td class="mini">'+esc(dr.address||'')+'</td><td class="mini">'+esc(dr.agent||'—')+'</td>'+
+          '<td class="mini">'+(refs.length?refs.map(function(r){return esc(r.ref||'')+(r.remarks?' ('+esc(r.remarks)+')':'')}).join('<br>'):'—')+'</td>'+
+          '<td class="num">'+(dr.weight!=null&&dr.weight!==''?num(dr.weight):'—')+'</td></tr>'}).join('')+'</tbody></table></div>'}).join('');
+  openModal('<div class="row" style="justify-content:space-between"><h3 style="margin:0">Delivery schedule · '+esc(lgDay(date))+'</h3>'+lgPill(LG_SCHED,status)+'</div>'+
+    '<p class="sub">'+esc(d.pool.name)+' · '+esc((d.pool.companies||[]).join(' · '))+(s?' · revision '+s.revision:'')+' · FO-LGTS-02</p>'+
+    stepper+
+    (status==='returned'?'<div class="warn"><b>Returned for revision</b>'+(s.return_reason?': '+esc(s.return_reason):'')+'</div>':'')+
+    (!s?'<div class="info">Not prepared yet — this is what the schedule would hold from the confirmed deliveries right now.</div>':'')+
+    (changed?'<div class="warn">Deliveries changed after this schedule was submitted. Below is the version that was signed.</div>':'')+
+    (d.partial?'<div class="info">This plant also serves other companies; only your companies’ drops are shown.</div>':'')+
+    (mine?'<div class="info" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><span><b>Waiting for your '+esc(LG_VERB[stepNow])+'.</b> Sign it in HATID with your passcode.</span>'+lgHatidLink(pool,date,'Sign in HATID')+'</div>':'')+
+    (secs||'<div class="empty">No trucks have deliveries on this date.</div>')+
+    ((d.events||[]).length?'<details style="margin-top:12px"><summary class="mini" style="cursor:pointer">History</summary><ul class="lg-tl">'+d.events.map(function(e){
+      return '<li><b>'+esc({submit:'Submitted',review:'Reviewed',confirm:'Confirmed',approve:'Approved',reject:'Returned for revision',withdraw:'Withdrawn',reopen:'Reopened'}[e.action]||e.action)+'</b> · rev '+esc(e.rev)+
+        ' <span class="mini">'+esc(e.by||'')+' · '+esc(lgDT(e.at))+'</span>'+(e.note?'<div>'+esc(e.note)+'</div>':'')+'</li>'}).join('')+'</ul></details>':'')+
+    '<div class="row right" style="margin-top:14px">'+lgHatidLink(pool,date,mine?'Sign in HATID':'Open in HATID')+'<button data-act="closeModal">Close</button></div>');
+  el('modalBox').style.width='min(1100px,100%)';
+}
+
+/* ---------- MAP: trucks (last GPS), the day's drop sites, the plants ---------- */
+var ML_JS='https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js';
+var ML_CSS='https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css';
+var _mlP=null;
+function lgLoadMap(){
+  if(window.maplibregl) return Promise.resolve(window.maplibregl);
+  if(!document.querySelector('link[href="'+ML_CSS+'"]')){var l=document.createElement('link');l.rel='stylesheet';l.href=ML_CSS;document.head.appendChild(l)}
+  return _mlP||(_mlP=new Promise(function(ok,no){var s=document.createElement('script');s.src=ML_JS;
+    s.onload=function(){ok(window.maplibregl)};s.onerror=function(){_mlP=null;no(new Error('Could not load the map — check the connection.'))};document.head.appendChild(s)}));
+}
+function lgPosState(p){if(!p)return 'none';var age=(Date.now()-new Date(p.at))/60000;return age>15?'old':Number(p.speed||0)>=5?'mv':'st'}
+var LG_PIN={scheduled:'#5a6b7d',dispatched:'#d97706',in_progress:'#d97706',completed:'#1f9d55',issue:'#c53030'};
+async function viewLgMap(){
+  if(LG.map&&LG.map.m){try{LG.map.m.remove()}catch(e){}} LG.map=null;
+  el('view').innerHTML='<div class="card"><div class="row" style="justify-content:space-between"><div><h3>Map · '+esc(lgDay(LG.date||(LG.ov&&LG.ov.today)))+'</h3>'+
+    '<p class="sub" style="margin:0">Trucks where their tracker last reported, the day’s drop sites and the plants. Tap a truck for its route today.</p></div><span id="lgUpdWrap"></span></div></div>'+
+    '<div class="lg-mapwrap"><div id="lgMap"></div><div id="lgMapList" class="lg-maplist"></div></div>';
+  var ml;
+  try{ var r=await Promise.all([lgLoadMap(),lgLoad(false,LG.date)]); ml=r[0] }catch(e){ return lgFail(e) }
+  var M=LG.map={m:new ml.Map({container:'lgMap',style:'https://tiles.openfreemap.org/styles/liberty',center:[121.0,14.6],zoom:9}),mk:{},fitted:false,focus:null};
+  M.m.addControl(new ml.NavigationControl({showCompass:false}),'top-left');
+  M.m.on('load',function(){ M.loaded=true;
+    M.m.addSource('trail',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+    M.m.addLayer({id:'trail',type:'line',source:'trail',paint:{'line-color':'#2b6cb0','line-width':4,'line-opacity':.8}});
+    if(M.focus) lgTrail(M.focus);
+  });
+  lgDrawMap();
+  if(LG.mapFocus){var f=LG.mapFocus;LG.mapFocus=null;setTimeout(function(){lgFocusTruck(f)},300)}
+  lgLive(async function(){ try{ await lgLoad(true,LG.date); lgDrawMap(); if(M.focus) lgTrail(M.focus) }catch(e){} });
+}
+function lgMarker(key,lngLat,html,cls,onClick){
+  var M=LG.map; var mk=M.mk[key];
+  if(!mk){var d=document.createElement('div');d.className='lg-mk '+(cls||'');d.innerHTML=html;
+    if(onClick) d.addEventListener('click',function(ev){ev.stopPropagation();onClick()});
+    mk=M.mk[key]=new maplibregl.Marker({element:d,anchor:'bottom'}).setLngLat(lngLat).addTo(M.m)}
+  else{mk.setLngLat(lngLat);mk.getElement().className='lg-mk '+(cls||'');mk.getElement().innerHTML=html}
+  mk._seen=true; return mk;
+}
+function lgPopup(lngLat,html){var M=LG.map;if(M.pop)M.pop.remove();M.pop=new maplibregl.Popup({offset:28,maxWidth:'300px'}).setLngLat(lngLat).setHTML(html).addTo(M.m)}
+function lgDrawMap(){
+  var M=LG.map, ov=LG.ov; if(!M||!ov) return;
+  var w=el('lgUpdWrap'); if(w) w.innerHTML=lgUpdated();
+  Object.keys(M.mk).forEach(function(k){M.mk[k]._seen=false});
+  var pts=[];
+  (ov.pools||[]).forEach(function(p){ if(p.base_lat==null) return;
+    lgMarker('b'+p.id,[p.base_lon,p.base_lat],'<span class="lg-base"><i class="ti ti-building-factory-2"></i></span>','',function(){
+      lgPopup([p.base_lon,p.base_lat],'<b>'+esc(p.origin||p.name)+'</b><br>'+esc((p.companies||[]).join(' · ')))}); });
+  var jobs=(ov.jobs||[]).filter(function(j){return j.lat!=null&&j.lon!=null});
+  jobs.forEach(function(j){ pts.push([j.lon,j.lat]);
+    lgMarker('j'+j.id,[j.lon,j.lat],'<svg viewBox="0 0 24 34" width="22" height="31"><path d="M12 1C6 1 1.5 5.5 1.5 11.3c0 7.6 10.5 21.2 10.5 21.2s10.5-13.6 10.5-21.2C22.5 5.5 18 1 12 1z" fill="'+(LG_PIN[j.status]||'#5a6b7d')+'" stroke="#fff" stroke-width="2"/><circle cx="12" cy="11.5" r="4" fill="#fff"/></svg>','',function(){
+      lgPopup([j.lon,j.lat],'<b>'+esc(j.client||'')+'</b><br>'+esc(j.serial||'')+(j.so?' · SO '+esc(j.so):'')+'<br>'+esc(j.truck||'')+(j.truck?' · trip '+j.trip_no:'')+
+        '<br>'+esc((LG_STATUS[j.status]||[j.status])[0])+(j.last?' — '+esc(lgEvText(j.last))+' '+esc(lgTime(j.last.at)):'')+
+        '<br><a href="#" data-act="lgJob" data-id="'+esc(j.id)+'">Details</a>')}); });
+  var dayTrucks={}; (ov.jobs||[]).forEach(function(j){if(j.truck_id)dayTrucks[j.truck_id]=1});
+  (ov.trucks||[]).forEach(function(t){ var p=t.pos; if(!p) return; var s=lgPosState(p);
+    if(s!=='old') pts.push([p.lon,p.lat]);
+    lgMarker('t'+t.id,[p.lon,p.lat],'<span class="lg-truck '+s+(M.focus===t.id?' focus':'')+'"><i class="ti ti-truck"></i></span><span class="lg-tl-lab">'+esc(t.label||'')+'</span>','',function(){lgFocusTruck(t.id)}); });
+  Object.keys(M.mk).forEach(function(k){if(!M.mk[k]._seen){M.mk[k].remove();delete M.mk[k]}});
+  if(!M.fitted&&pts.length){M.fitted=true;var b=new maplibregl.LngLatBounds();pts.forEach(function(x){b.extend(x)});M.m.fitBounds(b,{padding:60,maxZoom:13,duration:0})}
+  var list=(ov.trucks||[]).filter(function(t){return t.pos||dayTrucks[t.id]}).sort(function(a,b){return (dayTrucks[b.id]?1:0)-(dayTrucks[a.id]?1:0)||String(a.label).localeCompare(String(b.label))});
+  el('lgMapList').innerHTML='<div class="mini" style="padding:6px 8px">Trucks</div>'+(list.length?list.map(function(t){var s=lgPosState(t.pos);
+    var n=(ov.jobs||[]).filter(function(j){return j.truck_id===t.id}), dn=n.filter(function(j){return j.status==='completed'}).length;
+    return '<div class="lg-ml'+(M.focus===t.id?' on':'')+'" data-act="lgFocus" data-id="'+esc(t.id)+'"><span class="lg-dotc '+s+'"></span><div><b>'+esc(t.label||'')+'</b>'+
+      '<div class="mini">'+(t.pos?(s==='mv'?'moving '+Math.round(t.pos.speed)+' km/h · ':'')+'seen '+esc(lgAgo(t.pos.at)):(t.tracked?'tracker silent':'no tracker'))+
+      (n.length?' · '+dn+'/'+n.length+' drops':'')+'</div></div></div>'}).join(''):'<div class="empty">No trucks reporting.</div>');
+}
+function lgFocusTruck(id){
+  var M=LG.map; if(!M) return; M.focus=id; lgDrawMap();
+  var t=((LG.ov&&LG.ov.trucks)||[]).filter(function(x){return x.id===id})[0];
+  if(t&&t.pos){M.m.flyTo({center:[t.pos.lon,t.pos.lat],zoom:13});
+    lgPopup([t.pos.lon,t.pos.lat],'<b>'+esc(t.label||'')+'</b>'+(t.plate&&t.plate!==t.label?' · '+esc(t.plate):'')+'<br>Seen '+esc(lgAgo(t.pos.at))+
+      (t.pos.speed>=5?' · '+Math.round(t.pos.speed)+' km/h':'')+'<br><span class="mini">Blue line: route today</span>')}
+  if(M.loaded) lgTrail(id);
+}
+async function lgTrail(id){
+  var M=LG.map; if(!M||!M.loaded) return;
+  var pts=[]; try{ pts=await lgCall('trail',{truck:id,date:LG.date||(LG.ov&&LG.ov.today)}) }catch(e){}
+  if(!LG.map||LG.map!==M) return;
+  M.m.getSource('trail').setData({type:'FeatureCollection',features:pts.length>1?[{type:'Feature',geometry:{type:'LineString',coordinates:pts.map(function(p){return [p[0],p[1]]})}}]:[]});
+}
+
+/* ---------- CLIENT MESSAGES: everything HATID sent to and received from clients ---------- */
+async function viewLgMsgs(){
+  if(LG.me&&!LG.me.messages){el('view').innerHTML='<div class="card"><h3>Client messages</h3><div class="empty">Client messages are open to KEYSTONE Admins, Directors and Managers.</div></div>';return}
+  if(!LG.msgs) el('view').innerHTML='<div class="empty">Loading client messages from HATID…</div>';
+  try{ await lgLoadMsgs() }catch(e){ return lgFail(e) }
+  lgDrawMsgs();
+  lgLive(async function(){ try{ await lgLoadMsgs(); lgDrawMsgs(true) }catch(e){} });
+}
+async function lgLoadMsgs(){
+  var d=await lgCall('messages'); var J={}; (d.jobs||[]).forEach(function(j){J[j.id]=j});
+  var T={}; function th(id){return T[id]||(T[id]={id:id,job:J[id]||null,items:[],unread:0,last:0})}
+  (d.out||[]).forEach(function(o){th(o.job_id).items.push(Object.assign({dir:'out'},o))});
+  (d['in']||[]).forEach(function(m){var t=th(m.job_id||'unmatched');t.items.push(Object.assign({dir:'in'},m));if(!m.read)t.unread++});
+  Object.keys(T).forEach(function(k){var t=T[k];t.items.sort(function(a,b){return new Date(a.at)-new Date(b.at)});t.last=t.items.length?new Date(t.items[t.items.length-1].at).getTime():0});
+  LG.msgs={T:T,at:Date.now()}; LG.at=LG.at||Date.now();
+}
+function lgDrawMsgs(keep){
+  var T=LG.msgs.T, q=(LG.msgQ||'').toLowerCase();
+  var list=Object.keys(T).map(function(k){return T[k]}).sort(function(a,b){return b.last-a.last}).filter(function(t){
+    if(!q) return true; var j=t.job||{}; return [j.client,j.serial,j.contact,j.phone].concat(t.items.map(function(i){return i.body})).join(' ').toLowerCase().indexOf(q)>=0});
+  if(!keep||!el('lgThreads')){
+    el('view').innerHTML='<div class="card"><div class="row" style="justify-content:space-between"><div><h3>Client messages</h3>'+
+      '<p class="sub" style="margin:0">The last 60 days of updates HATID sent to clients and agents, and their replies. Replies are answered in HATID.</p></div>'+
+      '<span class="mini" id="lgUpd"><span class="lg-dot"></span> Live · updated '+esc(lgTime(new Date(LG.msgs.at).toISOString()))+'</span></div>'+
+      '<input id="lgMsgQ" placeholder="Search client, SO, number, text…" value="'+esc(LG.msgQ||'')+'" style="margin-top:12px"></div>'+
+      '<div class="lg-msgs"><div id="lgThreads" class="card" style="margin:0;padding:6px"></div><div id="lgThread" class="card" style="margin:0"></div></div>';
+    el('lgMsgQ').oninput=function(){LG.msgQ=this.value;lgDrawMsgs(true)};
+  } else { var u=el('lgUpd'); if(u) u.innerHTML='<span class="lg-dot"></span> Live · updated '+esc(lgTime(new Date(LG.msgs.at).toISOString())) }
+  el('lgThreads').innerHTML=list.length?list.map(function(t){var j=t.job, last=t.items[t.items.length-1]||{};
+    return '<div class="lg-th'+(LG.msgOpen===t.id?' on':'')+'" data-act="lgThread" data-id="'+esc(t.id)+'"><div class="row" style="justify-content:space-between;gap:6px">'+
+      '<b>'+esc(j?j.client||j.serial:t.id==='unmatched'?'Not matched to a delivery':'Delivery')+'</b>'+(t.unread?'<span class="tabcount">'+t.unread+'</span>':'')+'</div>'+
+      '<div class="mini">'+(j?esc(j.serial)+' · '+esc(j.company):'')+' · '+esc(lgDT(last.at))+'</div>'+
+      '<div class="mini lg-clip">'+(last.dir==='in'?'↩ ':'')+esc(String(last.body||last.subject||'').slice(0,120))+'</div></div>'}).join('')
+    :'<div class="empty">No client messages in the last 60 days.</div>';
+  var open=LG.msgOpen&&T[LG.msgOpen]?T[LG.msgOpen]:null;
+  el('lgThread').innerHTML=open?('<div class="row" style="justify-content:space-between"><div><h3 style="margin:0">'+esc(open.job?open.job.client||open.job.serial:'Not matched to a delivery')+'</h3>'+
+      (open.job?'<p class="sub" style="margin:0">'+esc(open.job.serial)+' · '+esc(lgDay(open.job.date))+(open.job.contact||open.job.phone?' · '+esc([open.job.contact,open.job.phone].filter(Boolean).join(' · ')):'')+'</p>':'')+'</div>'+
+      (open.job?'<button class="ghost lg-sm" data-act="lgJob" data-id="'+esc(open.job.id)+'">Delivery</button>':'')+'</div>'+
+      lgThreadHtml(open.items))
+    :'<div class="empty">Pick a conversation.</div>';
+}
+function lgThreadHtml(items){
+  if(!items||!items.length) return '<div class="mini">No messages.</div>';
+  return '<div class="lg-bubbles">'+items.map(function(m){
+    var head=m.dir==='in'?'↩ '+esc(m.from||'Client')+' · '+esc(LG_CH[m.channel]||m.channel||'')
+      :esc(LG_OB[m.kind]||m.kind||'Message')+' → '+esc(m.to||m.to_role||'')+' · '+esc(LG_CH[m.channel]||m.channel||'')+
+        (m.status&&m.status!=='sent'?' · <span style="color:'+(m.status==='failed'?'var(--red-ink)':'var(--amber-ink)')+'">'+esc(m.status)+'</span>':'');
+    return '<div class="lg-b '+(m.dir==='in'?'in':'out')+'"><div class="mini">'+head+' · '+esc(lgDT(m.at))+'</div>'+
+      (m.subject&&m.channel==='email'?'<div><b>'+esc(m.subject)+'</b></div>':'')+'<div class="lg-body">'+esc(m.body||'')+'</div></div>'}).join('')+'</div>';
+}
+
+/* Dashboard card: the day at a glance. */
+function lgDashCard(){
+  var ov=LG.ov;
+  if(!ov) return LG.err?'<div class="card"><h3>Logistics today</h3><div class="mini">HATID could not be reached: '+esc(LG.err)+'</div></div>':'';
+  var jobs=(ov.jobs||[]); if(ov.date!==ov.today) return '';
+  var done=jobs.filter(function(j){return j.status==='completed'}).length;
+  var road=jobs.filter(function(j){return j.status==='dispatched'||j.status==='in_progress'}).length;
+  var probs=jobs.filter(function(j){return j.status==='issue'||(j.last&&(j.last.type==='issue'||j.last.type==='delay')&&j.status!=='completed')}).length;
+  var pend=(ov.schedules||[]).filter(function(s){return LG_STEP_FOR[s.status]&&s.date>=ov.today}).length;
+  return '<div class="card"><div class="row" style="justify-content:space-between"><h3>Logistics today</h3>'+
+    '<button class="ghost lg-sm" data-act="go" data-tab="lg_live">Open</button></div><p class="sub">Live from HATID · '+esc(lgDay(ov.today))+'</p>'+
+    '<div class="grid g4 lg-kpis">'+kpi('Drops today',jobs.length,'scheduled for today')+kpi('On the road / on site',road,'')+
+    kpi('Delivered',done,jobs.length?Math.round(done/jobs.length*100)+'%':'')+
+    '<div class="kpi'+(probs?' lg-bad':'')+'"><div class="lbl">Problems &amp; delays</div><div class="val">'+probs+'</div><div class="hint">'+(pend?pend+' schedule'+(pend===1?'':'s')+' still being signed':'')+'</div></div></div></div>';
 }
 
 /* ---------- boot ---------- */
