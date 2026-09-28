@@ -33,6 +33,9 @@ header.top{position:sticky;top:0;z-index:40;background:rgba(15,17,21,.92);
 .topin{max-width:1360px;margin:0 auto;padding:12px 18px;display:flex;align-items:center;gap:14px}
 .brand{font-weight:700;letter-spacing:.2px;display:flex;align-items:center;gap:9px}
 .brand i{color:var(--accent)}
+.brand-t{display:flex;flex-direction:column;line-height:1.05}
+.brand-n{font-size:24px;letter-spacing:1.5px}
+.brand-s{font-size:10.5px;font-weight:500;opacity:.8;letter-spacing:.2px;white-space:nowrap}
 .spacer{flex:1}
 .who{font-size:12px;color:var(--text2);text-align:right;line-height:1.35}
 nav.tabs{display:flex;gap:4px;overflow-x:auto;padding:0 18px;max-width:1360px;margin:0 auto}
@@ -95,7 +98,7 @@ pre.prev{background:#0b0d11;border:1px solid var(--line);border-radius:10px;padd
 .stack{display:flex;flex-direction:column;gap:3px}
 @media(max-width:640px){.topin{flex-wrap:wrap}.who{text-align:left}}
 .card{overflow-x:auto}
-@media(max-width:640px){#envPill{display:none}.rtmo-logo{height:32px!important;margin-right:6px!important}.topin{gap:8px;padding:8px 12px}.who{display:none}nav.tabs{padding:0 8px}}
+@media(max-width:640px){.brand-n{font-size:20px}.brand-s{font-size:9px;white-space:normal;max-width:34vw}.brand svg{width:26px;height:26px}.rtmo-logo{height:32px!important;margin-right:6px!important}.topin{gap:8px;padding:8px 12px}.who{display:none}nav.tabs{padding:0 8px}}
 nav.subtabs{border-top:1px solid var(--line)}
 nav.subtabs button{padding:7px 12px;font-size:13px}
 .tabcount{display:inline-block;min-width:18px;padding:0 6px;margin-left:4px;border-radius:9px;background:var(--amber-ink,#f0b44c);color:#1a1300;font-size:11px;font-weight:700;line-height:17px;text-align:center}
@@ -164,13 +167,12 @@ ul.lg-tl li.unread:before{border-color:var(--amber);background:var(--amber)}
   <div class="topin">
     <img src="rtmo-logo.png" alt="RTmo Digital Solutions" title="RTmo Digital Solutions" class="rtmo-logo">
     <div class="brand">
-      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="32" height="32" aria-hidden="true">
         <path d="M7.6 4h8.8l3.1 16H4.5z" fill="none" stroke="var(--accent)" stroke-width="1.9"
               stroke-linejoin="round"/>
         <path d="M9.9 9.3h4.2M9.4 13.6h5.2" stroke="var(--accent)" stroke-width="1.6"
               stroke-linecap="round" opacity=".55"/>
-      </svg>KEYSTONE</div>
-    <span class="pill p-grey" id="envPill">Purchasing &amp; Production Release</span>
+      </svg><span class="brand-t"><span class="brand-n">KEYSTONE</span><span class="brand-s" id="envPill">Purchasing &amp; Production Release</span></span></div>
     <div class="spacer"></div>
     <div class="who" id="who">Not signed in</div>
     <button id="authBtn" class="primary">Sign in with Google</button>
