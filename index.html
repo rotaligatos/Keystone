@@ -277,6 +277,7 @@ var ACTIONS={
   submitPO:function(d){submitPO(d.id)},
   issuePO:function(d){issuePO(d.id)},
   closeModal:function(){closeModal()},
+  mrPhoto:function(d){mrPhoto(d.id)},
   reload:function(){location.reload()}
 };
 document.addEventListener('click',function(e){
@@ -451,7 +452,7 @@ var GROUPS=[
   {k:'dash',  t:'Dashboard',     i:'ti-chart-bar',     leaves:[['dash','Dashboard']]},
   {k:'queue', t:'Release Queue', i:'ti-lock-open',     leaves:[['queue','Release queue']]},
   {k:'purch', t:'Purchasing',    i:'ti-file-dollar',   leaves:[['review','My requests'],['appr','Approvals'],['po','Purchase orders'],['src','Suppliers']]},
-  {k:'wh',    t:'Warehouse',     i:'ti-package',       leaves:[['mr','Material requests'],['boards','Board requests']]},
+  {k:'wh',    t:'Warehouse',     i:'ti-package',       leaves:[['mr','Material requests'],['boards','Extra board requests']]},
   {k:'more',  t:'More',          i:'ti-dots',          leaves:[['prov','Plant & HRIS']]}
 ];
 var LAST={};
@@ -1375,6 +1376,24 @@ function addProduct(sid){
    right on the page, and processing done in place — no pop-up per request. "Needs processing" is
    the default view for people who issue from the warehouse. */
 var MR_ONLY=null;
+var XBR={};
+function mrPurpose(r){
+  var b=XBR[r.id];
+  if(b) return '<div class="info" style="margin-top:6px"><b>Extra boards</b> — asked for by production after inspecting the boards that arrived (rejected or defective). '+
+    'Reason: '+esc(b.reason||'—')+' <span class="mini">('+esc(b.created_by_name||b.created_by||'')+', '+dt(b.created_at)+')</span></div>';
+  return '<div class="mini" style="margin-top:4px"><b>First issue</b> — '+(r.stream==='purchase'?'outsourced / made-to-order items for this job, processed when they arrive.':'everything this job needs from the warehouse (boards, hardware, edge tape).')+'</div>';
+}
+function mrCheck(l){
+  if(!l.receive_condition) return '<span class="mini">—</span>';
+  var c={ok:['p-teal','OK'],short:['p-amber','Short'],damaged:['p-red','Damaged']}[l.receive_condition]||['',l.receive_condition];
+  return '<span class="pill '+c[0]+'">'+c[1]+'</span>'+(l.receive_note?'<div class="mini">'+esc(l.receive_note)+'</div>':'')+
+    (l.receive_photo?'<button class="ghost" data-act="mrPhoto" data-id="'+esc(l.receive_photo)+'" style="margin-top:4px">View photo</button>':'');
+}
+async function mrPhoto(path){
+  var r=await supa.storage.from('pmes-receipts').createSignedUrl(path,600);
+  if(r.error){toast(errMsg(r.error),'err');return}
+  window.open(r.data.signedUrl,'_blank','noopener');
+}
 async function viewMR(){
   el('view').innerHTML='<div class="empty">Loading material requests…</div>';
   var canIssue=!!ME.caps.can_issue;
@@ -1386,6 +1405,8 @@ async function viewMR(){
   if(ids.length){
     var lq=await supa.from('adm_mr_lines').select('*').in('mr_id',ids).order('line_no');
     (lq.data||[]).forEach(function(l){(lines[l.mr_id]=lines[l.mr_id]||[]).push(l)});
+    var bq=await supa.from('pmes_board_requests').select('mr_id,reason,created_by_name,created_by,created_at,job_code,lines').in('mr_id',ids);
+    (bq.data||[]).forEach(function(b){ if(b.mr_id) XBR[b.mr_id]=b; });
   }
   var waiting=all.filter(function(r){return ['authorized','partially_issued'].indexOf(r.status)>=0}).length;
   var h='<div class="card"><h3>Material requests</h3>'+
@@ -1403,15 +1424,15 @@ async function viewMR(){
       '<div class="row" style="justify-content:space-between"><div><b>'+esc(r.mr_no||'—')+'</b> '+
         (r.stream==='warehouse'?'<span class="pill p-teal">warehouse</span>':'<span class="pill p-amber">purchase</span>')+' '+pill(r.status)+
         '<div class="mini">'+esc(r.quotation_serial||'')+(r.pmes_job_code?' · PMES job '+esc(r.pmes_job_code):'')+' · '+esc(r.company||'')+'</div>'+
-        qLabel(r.quotation_serial)+'</div>'+
+        qLabel(r.quotation_serial)+mrPurpose(r)+'</div>'+
       '<div class="mini" style="text-align:right">'+(r.authorized_by?'Authorized '+dt(r.authorized_at):'')+
         (r.processed_by?'<br>Processed by '+esc(r.processed_by)+' '+dt(r.processed_at):'')+
         (r.received_by?'<br>Received by '+esc(r.received_by)+' '+dt(r.received_at):'')+'</div></div>'+
-      '<table style="margin-top:8px"><thead><tr><th>#</th><th>Item</th><th>Unit</th><th class="num">Requested</th><th class="num">Processed</th><th class="num">Received</th><th class="num">Lead</th></tr></thead><tbody>'+
+      '<table style="margin-top:8px"><thead><tr><th>#</th><th>Item</th><th>Unit</th><th class="num">Requested</th><th class="num">Processed</th><th class="num">Received</th><th>Production check</th><th class="num">Lead</th></tr></thead><tbody>'+
       ls.map(function(l){return '<tr><td>'+num(l.line_no)+'</td><td>'+esc(l.item_name)+'<div class="mini">'+esc(l.area||'')+'</div></td>'+
         '<td>'+esc(l.unit||'')+'</td><td class="num">'+num(l.qty)+'</td>'+
         '<td class="num">'+(open?'<input type="number" class="mri" data-mr="'+esc(r.id)+'" data-line="'+esc(l.id)+'" data-q="'+esc(l.qty)+'" min="'+(+l.qty_received||0)+'" max="'+esc(l.qty)+'" step="any" value="'+(l.qty_issued!=null?l.qty_issued:'')+'" placeholder="0" style="width:90px;text-align:right">':num(l.qty_issued))+'</td>'+
-        '<td class="num">'+num(l.qty_received)+'</td><td class="num">'+(l.mto_lead_days!=null?l.mto_lead_days+'d':'—')+'</td></tr>'}).join('')+
+        '<td class="num">'+num(l.qty_received)+'</td><td>'+mrCheck(l)+'</td><td class="num">'+(l.mto_lead_days!=null?l.mto_lead_days+'d':'—')+'</td></tr>'}).join('')+
       '</tbody></table>'+
       (open?'<div class="row" style="margin-top:10px"><button class="ghost" data-act="mrFillAll" data-id="'+esc(r.id)+'">Fill all as requested</button>'+
         '<input id="mrNote_'+esc(r.id)+'" placeholder="Note (optional)" style="flex:1;min-width:180px">'+
@@ -1491,12 +1512,16 @@ async function viewBoardReqs(){
   if(q.error) throw q.error;
   var rows=(q.data||[]).filter(function(r){ return ['pending_supervisor','pending_manager','cancelled'].indexOf(r.status)<0; });
   var canDecide=!!(ME.caps.can_issue||ME.caps.can_release), isHead=!!ME.caps.is_plant_head;
-  el('view').innerHTML='<div class="card"><h3>Board Requests</h3>'+
+  var mq=rows.filter(function(r){return r.mr_id}).length?await supa.from('adm_material_requests').select('id,mr_no,status').in('id',rows.filter(function(r){return r.mr_id}).map(function(r){return r.mr_id})):{data:[]};
+  var mrNo={}; (mq.data||[]).forEach(function(m){mrNo[m.id]=m});
+  el('view').innerHTML='<div class="card"><h3>Extra board requests</h3>'+
+    '<div class="info" style="margin-bottom:8px"><b>What this is for:</b> the job\'s boards already came with its first Material request. '+
+    'This list is only for <b>additional</b> boards production needs later — when boards that arrived are rejected or have defects and the cutting plan comes up short.</div>'+
     '<p class="sub">Additional boards asked for by production after inspecting what arrived (rejected or defective boards). '+
     'Approved in PMES by a supervisor and a manager before reaching here. <b>Accept</b> raises a warehouse MRF; '+
     '<b>Reject</b> sends it back — production may escalate it to the <b>Head of Plant Operations</b>, whose decision is final.</p>'+
     (rows.length?listBar('boards','Search job, quotation, client, reason…')+'<div class="mini" data-lfn="boards"></div>'+
-      '<table data-lft="boards"><thead><tr><th>Job</th><th>Boards</th><th>Why</th><th>Status</th><th>Trail</th><th></th></tr></thead><tbody>'+
+      '<table data-lft="boards"><thead><tr><th>Job</th><th>Boards</th><th>Why</th><th>Status</th><th>Trail</th><th>Raised MRF</th><th></th></tr></thead><tbody>'+
       rows.map(function(r){
         var trail=[r.supervisor_by&&('Supervisor '+r.supervisor_by),r.manager_by&&('Manager '+r.manager_by),
           r.ks_by&&('KEYSTONE '+r.ks_by+(r.ks_note?': '+r.ks_note:'')),r.escalated_by&&('Escalated by '+r.escalated_by+': '+r.escalate_note),
@@ -1510,9 +1535,9 @@ async function viewBoardReqs(){
         return '<tr'+rowAttrs([r.job_code,r.quotation_serial,r.reason,r.status],r.company)+'><td><b>'+esc(r.job_code||'—')+'</b><div class="mini">'+esc(r.quotation_serial||'')+'<br>'+esc(r.company||'')+'</div>'+qLabel(r.quotation_serial)+'</td>'+
           '<td>'+(r.lines||[]).map(function(l){return num(l.qty)+' × '+esc(l.label);}).join('<br>')+'</td>'+
           '<td>'+esc(r.reason)+'<div class="mini">'+esc(r.created_by_name||r.created_by)+' · '+dt(r.created_at)+'</div></td>'+
-          '<td>'+pill(r.status)+'</td><td class="mini">'+trail+'</td><td class="num" style="white-space:nowrap">'+act+'</td></tr>';
+          '<td>'+pill(r.status)+'</td><td class="mini">'+trail+'</td><td>'+(r.mr_id&&mrNo[r.mr_id]?'<b>'+esc(mrNo[r.mr_id].mr_no||'')+'</b><div class="mini">'+esc(mrNo[r.mr_id].status||'')+'</div>':'<span class="mini">—</span>')+'</td><td class="num" style="white-space:nowrap">'+act+'</td></tr>';
       }).join('')+'</tbody></table>'
-     :'<div class="empty">No board requests yet.</div>')+'</div>';
+     :'<div class="empty">No extra board requests yet.</div>')+'</div>';
 }
 function brDecide(id,accept){
   askText(accept?'Accept board request':'Reject board request',accept?'Note for production':'Why is it rejected',!accept,function(note){_brDecide(id,accept,note)},
@@ -1565,7 +1590,7 @@ async function viewDash(){
     ['my_drafts','My drafts','purchase requests to review and sign','review'],
     ['po_to_act','Orders to raise or buy','approved requests / orders','po'],
     ['mr_to_process','Materials to process','warehouse: confirm what was issued','mr'],
-    ['boards_to_decide','Board requests','extra boards waiting for a decision','boards']];
+    ['boards_to_decide','Extra board requests','extra boards waiting for a decision','boards']];
   var needs=tiles.filter(function(t){return N[t[0]]>0});
   el('view').innerHTML=
     '<div class="card needs"><h3>Needs you</h3>'+
