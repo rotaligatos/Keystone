@@ -1772,7 +1772,10 @@ var LG_STATUS={scheduled:['Scheduled','p-blue'],dispatched:['On the road','p-amb
   completed:['Delivered','p-green'],issue:['Problem','p-red'],proposed:['Proposed','p-grey'],rejected:['Rejected','p-grey']};
 var LG_OUTCOME={full:['Delivered','p-green'],partial:['Partial','p-amber'],returned:['Refused','p-red']};
 var LG_EVENT={proposed:'Proposed',scheduled:'Scheduled',rejected:'Rejected',dispatched:'Departed',arrived:'Arrived on site',
-  completed:'Delivery result',issue:'Problem reported',delay:'Delay reported'};
+  completed:'Delivery result',issue:'Problem reported',delay:'Delay reported',note:'Note',load_confirmed:'Pre-departure check confirmed',
+  load_unlocked:'Pre-departure check unlocked',load_concern:'Load concern before departure'};
+var LG_REASON={damaged:'Damaged',wrong_item:'Wrong item / color / size',short_loaded:'Short-loaded',refused:'Client refused',site_not_ready:'Site not ready / no receiver',other:'Other'};
+function lgCourierTxt(c){return c?((c.service==='grab'?'🟢 Grab ':'🟠 Lalamove ')+(c.vehicle||'')):''}
 var LG_DELAY={site_not_ready:'Site not ready',client_absent:'Receiver not available',access:'No access / gate pass / permit',
   unloading:'Waiting to unload',traffic:'Traffic / road closure',truck:'Truck problem',weather:'Weather',other:'Other'};
 var LG_ISSUE={breakdown:'Truck breakdown',accident:'Accident',traffic_violation:'Traffic violation',wrong_items:'Wrong or missing items',
@@ -1912,7 +1915,7 @@ function lgDrawLive(){
   var jobs=(ov.jobs||[]).filter(function(j){
     if(f.co&&j.company!==f.co) return false;
     if(f.pool&&j.pool_id!==f.pool) return false;
-    var hay=[j.client,j.serial,j.so,j.truck,j.plate,j.address,j.province,j.agent].join(' ').toLowerCase();
+    var hay=[j.client,j.serial,j.so,j.truck,j.plate,j.address,j.province,j.agent,j.courier?lgCourierTxt(j.courier)+' '+(j.courier.ref||''):''].join(' ').toLowerCase();
     return words.every(function(w){return hay.indexOf(w)>=0});
   });
   var trips={}; (ov.trips||[]).forEach(function(t){trips[t.truck_id+'|'+t.trip_no]=t});
@@ -1929,20 +1932,32 @@ function lgDrawLive(){
   '</div>';
   if(!jobs.length){ el('lgBody').innerHTML='<div class="card"><div class="empty">'+((ov.jobs||[]).length?'Nothing matches the filters.':'No deliveries on this date.')+'</div></div>'; return }
   var groups=[], gi={};
-  jobs.forEach(function(j){var k=(j.truck_id||'none')+'|'+j.trip_no; if(!gi[k]){gi[k]={k:k,truck_id:j.truck_id,trip_no:j.trip_no,truck:j.truck,plate:j.plate,jobs:[]};groups.push(gi[k])} gi[k].jobs.push(j)});
+  jobs.forEach(function(j){var k=j.courier?'c|'+j.id:(j.truck_id||'none')+'|'+j.trip_no; if(!gi[k]){gi[k]={k:k,truck_id:j.truck_id,trip_no:j.trip_no,truck:j.truck,plate:j.plate,courier:j.courier,jobs:[]};groups.push(gi[k])} gi[k].jobs.push(j)});
+  var checks={}; (ov.checks||[]).forEach(function(c){checks[c.truck_id]=c});
   el('lgBody').innerHTML=groups.map(function(g){
     var t=trips[g.truck_id+'|'+g.trip_no], tk=trucks[g.truck_id]||{}, pos=tk.pos;
     var left=t&&t.departed_at?'Left '+lgTime(t.departed_at)+(t.gps?' <span class="mini">(GPS)</span>':' <span class="mini">(tapped)</span>'):
       'Not left yet'+(t&&t.target?' · leave by '+esc(lgHHMM(t.target)):'');
     var back=t&&t.back_at?' · back '+lgTime(t.back_at):'';
     var late=t&&t.late_reason?' <span class="pill p-amber">late: '+esc(String(t.late_reason).replace(/^ld_/,'').replace(/_/g,' '))+'</span>':'';
+    var ck=g.truck_id&&checks[g.truck_id], nts=(ov.notices||[]).filter(function(n){return n.truck_id===g.truck_id&&n.trip_no===g.trip_no});
+    var reN=nts.filter(function(n){return n.kind==='reorder'})[0], rqN=nts.filter(function(n){return n.kind==='order_request'&&n.status==='pending'})[0];
+    var flow=!g.truck_id?'':
+      (ck?(ck.fails?'<span class="pill p-amber">🔧 checklist: '+ck.fails+' not OK</span> ':'<span class="pill p-green">checklist OK</span> '):'')+
+      (t&&t.locked_at?'<span class="pill p-green">🔒 load checked '+lgTime(t.locked_at)+'</span> ':(t&&t.departed_at?'<span class="pill p-red">left without pre-departure check</span> ':'<span class="pill p-grey">pre-departure not done</span> '))+
+      (t&&t.return_at&&!t.back_at?'<span class="pill p-blue">🔙 returning since '+lgTime(t.return_at)+'</span> ':'')+
+      (reN?(reN.status==='pending'?'<span class="pill p-amber">🔀 new drop order — driver hasn’t confirmed</span> ':reN.status==='concern'?'<span class="pill p-red">🔀 driver concern: '+esc(reN.response||'')+'</span> ':''):'')+
+      (rqN?'<span class="pill p-amber">↪️ driver asks to change the order</span> ':'');
     var trk=!g.truck_id?'':pos?'<span class="mini">📍 seen '+esc(lgAgo(pos.at))+(pos.speed>=5?' · '+Math.round(pos.speed)+' km/h':'')+'</span>'+
       ' <button class="ghost lg-sm" data-act="lgMapTruck" data-id="'+esc(g.truck_id)+'">Map</button>':
       '<span class="mini">'+(tk.tracked?'tracker silent':'no tracker')+'</span>';
     return '<div class="card lg-trip"><div class="row" style="justify-content:space-between">'+
+      (g.courier?'<div><b>'+esc(lgCourierTxt(g.courier))+'</b> <span class="mini">booking '+esc(g.courier.ref||'—')+(g.courier.paid_by==='client'?' · paid by client':'')+'</span>'+
+        (g.courier.track?' <a class="mini" target="_blank" rel="noopener" href="'+esc(g.courier.track)+'">Track the rider</a>':'')+'</div><div></div></div>':
       '<div><b><i class="ti ti-truck"></i> '+esc(g.truck||'No truck yet')+'</b>'+(g.truck_id&&g.plate&&g.plate!==g.truck?' <span class="mini">'+esc(g.plate)+'</span>':'')+
         (g.truck_id?' <span class="pill p-grey">Trip '+g.trip_no+'</span>':'')+(t&&t.ticket?' <span class="mini">#'+esc(t.ticket)+'</span>':'')+'</div>'+
-      '<div class="mini" style="text-align:right">'+(g.truck_id?left+back+late:'')+'<br>'+trk+'</div></div>'+
+      '<div class="mini" style="text-align:right">'+(g.truck_id?left+back+late:'')+'<br>'+trk+'</div></div>')+
+      (flow?'<div class="lg-flow" style="margin-top:6px">'+flow+'</div>':'')+
       '<table style="margin-top:8px"><thead><tr><th style="width:34px">#</th><th>Client</th><th class="lg-addr">Address</th><th>Status</th><th class="lg-latest">Latest</th></tr></thead><tbody>'+
       g.jobs.map(function(j,i){
         var bad=j.status==='issue'||(j.last&&(j.last.type==='issue'||j.last.type==='delay')&&j.status!=='completed');
@@ -1968,6 +1983,9 @@ async function lgJob(id){
       (j.dr_no?_pvRow('DR / SI',esc(j.dr_no)):'')+
       (j.weight?_pvRow('Weight',num(j.weight)+' kg'):'')+
       (j.agent?_pvRow('Sales agent',esc(j.agent)):'')+
+      (j.courier?_pvRow('Delivered by',esc(lgCourierTxt(j.courier))+' · booking '+esc(j.courier.ref||'—')+(j.courier.paid_by==='client'?' · paid by client':'')+
+        (j.courier.track?' · <a target="_blank" rel="noopener" href="'+esc(j.courier.track)+'">track</a>':'')):'')+
+      (j.reasons&&Object.keys(j.reasons).length?_pvRow('Not delivered because',esc(Object.values(j.reasons).map(function(r){return LG_REASON[r]||r}).filter(function(v,i,a){return a.indexOf(v)===i}).join(', '))):'')+
       (j.contact||j.phone?_pvRow('Client contact',esc([j.contact,j.phone].filter(Boolean).join(' · '))):'')+
       (j.received_by?_pvRow('Received by',esc(j.received_by)):'')+
       (j.notes?_pvRow('Notes',esc(j.notes)):'')+
@@ -1976,7 +1994,7 @@ async function lgJob(id){
     ((d.events||[]).length?'<ul class="lg-tl">'+d.events.map(function(e){
       return '<li class="'+(e.type==='issue'||e.type==='delay'?'bad':e.type==='completed'?'ok':'')+'"><b>'+esc(lgEvText(e))+'</b> <span class="mini">'+esc(lgDT(e.at))+
         (e.by?' · '+esc(e.by):'')+'</span>'+(e.notes?'<div>'+esc(e.notes)+'</div>':'')+
-        (e.photo?'<div class="mini">📷 photo in HATID</div>':'')+'</li>'}).join('')+'</ul>':'<div class="mini">Nothing reported yet.</div>')+
+        (e.photos>1?'<div class="mini">📷 '+e.photos+' photos in HATID and Google Drive</div>':e.photo?'<div class="mini">📷 photo in HATID</div>':'')+'</li>'}).join('')+'</ul>':'<div class="mini">Nothing reported yet.</div>')+
     (d.messages?'<h3 style="margin-top:16px;font-size:14px">Messages</h3>'+lgThreadHtml(d.messages):'')+
     (j.lat!=null&&j.lon!=null?'<p class="mini" style="margin-top:10px"><a target="_blank" rel="noopener" href="https://www.google.com/maps?q='+encodeURIComponent(j.lat+','+j.lon)+'">Open the site in Google Maps</a></p>':'')+
     '<div class="row right" style="margin-top:14px">'+lgHatidLink(null,null,'Open HATID')+'<button data-act="closeModal">Close</button></div>');
@@ -2041,6 +2059,12 @@ async function lgSched(pool,date){
       '<span class="mini">'+(g?esc(lgDT(g.at)):esc(x[2]))+'</span></div>'}).join('')+'</div>';
   var secs=content.map(function(sec){
     var over=Number(sec.capacity)&&Number(sec.total_weight)>Number(sec.capacity);
+    if(sec.courier) return '<div class="lg-sec"><div class="row" style="justify-content:space-between"><b>'+(sec.service==='grab'?'🟢 ':'🟠 ')+esc(sec.label||'')+'</b>'+
+      '<span class="mini">Booking '+esc(sec.booking||'—')+' · fare paid by '+(sec.paid_by==='client'?'client':'company')+(sec.track?' · <a target="_blank" rel="noopener" href="'+esc(sec.track)+'">track</a>':'')+'</span></div>'+
+      '<table style="margin-top:6px"><thead><tr><th>#</th><th>Customer</th><th>Address</th><th>Sales agent</th><th>Doc. reference</th><th class="num">Weight</th></tr></thead><tbody>'+
+      (sec.drops||[]).map(function(dr,i){var refs=(Array.isArray(dr.doc_refs)?dr.doc_refs:[]).filter(function(r){return r&&(r.ref||r.remarks)});
+        return '<tr><td class="mini">'+(i+1)+'</td><td><b>'+esc(dr.customer||dr.serial)+'</b><div class="mini">'+esc(dr.serial||'')+' · '+esc(dr.company||'')+'</div></td><td class="mini">'+esc(dr.address||'')+'</td><td class="mini">'+esc(dr.agent||'—')+'</td>'+
+          '<td class="mini">'+(refs.length?refs.map(function(r){return esc(r.ref||'')+(r.remarks?' ('+esc(r.remarks)+')':'')}).join('<br>'):'—')+'</td><td class="num">'+(dr.weight!=null&&dr.weight!==''?num(dr.weight):'—')+'</td></tr>'}).join('')+'</tbody></table></div>';
     return '<div class="lg-sec"><div class="row" style="justify-content:space-between"><b><i class="ti ti-truck"></i> '+esc(sec.label||'')+
         (sec.plate_no&&sec.plate_no!==sec.label?' · '+esc(sec.plate_no):'')+' · Trip '+esc(sec.trip_no)+(sec.coded?' <span class="pill p-amber">coding</span>':'')+'</b>'+
       '<span class="mini">Driver: '+esc(sec.driver||'—')+' · Helper: '+esc(sec.helper||'—')+(sec.contact_no?' · '+esc(sec.contact_no):'')+'</span></div>'+
