@@ -266,6 +266,11 @@ var CACHE={};
 
 /* ---------- small helpers ---------- */
 function el(id){return document.getElementById(id)}
+/* A page loads its data, then writes itself into #view. If the person clicked another tab while it was
+   still loading, a slow page used to finish afterwards and overwrite the tab they picked — the tabs looked
+   broken (Rommel, 2026-09-30). Each draw gets a ticket; a page whose ticket is no longer current writes
+   into a throwaway box instead of the screen. */
+function VIEW(seq){ return (seq===undefined||seq===render._seq)?el('view'):document.createElement('div'); }
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 function money(n){if(n==null||n==='')return '—';
@@ -679,6 +684,7 @@ function render(){
   // A screen that fails must say why. Silence here reads as "the app is broken".
   // After an action the screen re-renders; stay where the person was instead of jumping to the top.
   var keepY=(render._tab===TAB)?window.scrollY:0; render._tab=TAB;
+  render._seq=(render._seq||0)+1;
   Promise.resolve().then(fn).then(function(){ if(keepY) window.scrollTo(0,keepY); applyAllLF(); fillQLabels(); refreshNeeds(); }).catch(function(e){
     fatalCard('This screen could not load',
       '<p class="sub">The rest of the app still works — switch tabs above.</p>'+
@@ -688,10 +694,11 @@ function render(){
 
 /* ================= 1. RELEASE QUEUE ================= */
 async function viewQueue(){
-  el('view').innerHTML='<div class="empty">Loading approved quotations…</div>';
+  var _vs=render._seq;   // this page's ticket — see VIEW()
+  VIEW(_vs).innerHTML='<div class="empty">Loading approved quotations…</div>';
   var q=await supa.from('adm_v_release_queue').select('*')
     .order('total',{ascending:false}).limit(300);
-  if(q.error){el('view').innerHTML='<div class="card"><div class="warn">'+
+  if(q.error){VIEW(_vs).innerHTML='<div class="card"><div class="warn">'+
     esc(errMsg(q.error))+'</div></div>';return}
 
   QROWS=(q.data||[]).filter(function(r){return r.fq_client_approved||r.iq_client_approved});
@@ -736,7 +743,7 @@ async function viewQueue(){
        '</tr>'}).join('')+'</tbody></table>'
       :'<div class="empty">Nothing at initial-approval stage.</div>')+'</div>';
 
-  el('view').innerHTML=h;
+  VIEW(_vs).innerHTML=h;
   el('qfCo').value=QF.co; el('qfSt').value=QF.st;
   el('qfSearch').oninput=function(){QF.q=this.value;drawQueueList()};
   el('qfCo').onchange=function(){QF.co=this.value;drawQueueList()};
@@ -995,7 +1002,8 @@ function buildOff(){
    are frozen and the approval chain begins.
    ====================================================================== */
 async function viewReview(){
-  el('view').innerHTML='<div class="empty">Loading your requests…</div>';
+  var _vs=render._seq;   // this page's ticket — see VIEW()
+  VIEW(_vs).innerHTML='<div class="empty">Loading your requests…</div>';
   var q=await supa.from('adm_purchase_requests').select('*')
     .order('created_at',{ascending:false}).limit(200);
   if(q.error)throw q.error;
@@ -1026,7 +1034,7 @@ async function viewReview(){
        'Go to <b>Release Queue</b> and press <b>Generate PR</b> on a quotation that has '+
        'outsource materials.</div></div>';
   }
-  el('view').innerHTML=h;
+  VIEW(_vs).innerHTML=h;
 }
 function prTable(title,rows,isDraft){
   if(!rows.length)return '';
@@ -1137,7 +1145,8 @@ async function delLine(lineId,prId){
 
 /* ================= APPROVALS ================= */
 async function viewApprovals(){
-  el('view').innerHTML='<div class="empty">Loading approvals…</div>';
+  var _vs=render._seq;   // this page's ticket — see VIEW()
+  VIEW(_vs).innerHTML='<div class="empty">Loading approvals…</div>';
   var pq=await supa.from('adm_purchase_requests').select('*')
     .in('status',['pending_manager','pending_hpo']).order('signed_at');
   var oq=await supa.from('adm_purchase_orders').select('*')
@@ -1200,7 +1209,7 @@ async function viewApprovals(){
             '<button class="danger" data-act="rejPO" data-id="'+esc(o.id)+'">Reject</button>'+
           '</td></tr>'}).join('')+'</tbody></table>'
      :'<div class="empty">Nothing waiting for your decision.</div>')+'</div></div>';
-  el('view').innerHTML=h;
+  VIEW(_vs).innerHTML=h;
 }
 function apprPR(id,ok){
   if(ok) return rpcPreview('adm_pr_approve',{p_pr_id:id,p_approve:true,p_reason:null},'Approve purchase request — review');
@@ -1215,7 +1224,8 @@ function apprPO(id,ok){
 
 /* ================= PURCHASE ORDERS ================= */
 async function viewPO(){
-  el('view').innerHTML='<div class="empty">Loading purchase orders…</div>';
+  var _vs=render._seq;   // this page's ticket — see VIEW()
+  VIEW(_vs).innerHTML='<div class="empty">Loading purchase orders…</div>';
   var oq=await supa.from('adm_purchase_orders').select('*').order('created_at',{ascending:false}).limit(200);
   var pq=await supa.from('adm_purchase_requests').select('id,pr_no,est_total,company,status,quotation_serial')
     .in('status',['approved','ordered']);
@@ -1255,7 +1265,7 @@ async function viewPO(){
              (!o.hpo_approved_by&&!o.md_approved_by?'—':'')+'</td>'+
           '<td class="num" style="white-space:nowrap">'+acts+'</td></tr>'}).join('')+'</tbody></table>'
      :'<div class="empty">No purchase orders yet.</div>')+'</div>';
-  el('view').innerHTML=h;
+  VIEW(_vs).innerHTML=h;
 }
 async function newPO(prId){
   var pr=await supa.from('adm_purchase_requests').select('*').eq('id',prId).maybeSingle();
@@ -1330,7 +1340,8 @@ function issuePO(id){rpcPreview('adm_po_issue',{p_po_id:id},'Purchase — review
 
 /* ================= 3. SOURCING ================= */
 async function viewSourcing(){
-  el('view').innerHTML='<div class="empty">Loading suppliers…</div>';
+  var _vs=render._seq;   // this page's ticket — see VIEW()
+  VIEW(_vs).innerHTML='<div class="empty">Loading suppliers…</div>';
   var s=await supa.from('adm_suppliers').select('*').order('name').limit(400);
   var rows=(s.data||[]);
   var h='<div class="card"><h3>Supplier directory</h3>'+
@@ -1360,7 +1371,7 @@ async function viewSourcing(){
     '<code>adm_supplier_products</code> and are deliberately <b>never</b> written back into Modcraft\'s '+
     'price database — that table feeds client quotations, and mixing selling prices with supplier '+
     'costs in one table is exactly the kind of bug that is hard to unpick later.</div></div>';
-  el('view').innerHTML=h;
+  VIEW(_vs).innerHTML=h;
 }
 function pillSup(s){
   var m={preferred:'p-green',accredited:'p-blue',prospect:'p-grey',
@@ -1480,7 +1491,8 @@ async function mrPhoto(path){
   window.open(r.data.signedUrl,'_blank','noopener');
 }
 async function viewMR(){
-  el('view').innerHTML='<div class="empty">Loading material requests…</div>';
+  var _vs=render._seq;   // this page's ticket — see VIEW()
+  VIEW(_vs).innerHTML='<div class="empty">Loading material requests…</div>';
   var canIssue=!!ME.caps.can_issue;
   if(MR_ONLY===null) MR_ONLY=canIssue;
   var q=await supa.from('adm_material_requests').select('*').order('created_at',{ascending:false}).limit(300);
@@ -1525,7 +1537,7 @@ async function viewMR(){
        :(!canIssue&&['authorized','partially_issued'].indexOf(r.status)>=0?'<div class="info">Waiting for the warehouse. Only people with the <b>Warehouse issue</b> permission can confirm.</div>':''))+
     '</div>'}).join('')
     :'<div class="card"><div class="empty">'+(MR_ONLY?'Nothing waiting to be processed.':'No material requests yet.')+'</div></div>')+'</div>';
-  el('view').innerHTML=h;
+  VIEW(_vs).innerHTML=h;
   el('mrOnly').onchange=function(){MR_ONLY=this.checked;render()};
 }
 function mrFillAll(id){document.querySelectorAll('.mri[data-mr="'+id+'"]').forEach(function(i){i.value=i.getAttribute('data-q')})}
@@ -1592,14 +1604,15 @@ async function mrProcess(id){
    Accept -> it becomes a warehouse MRF (processed and received like any other). Reject -> PMES may
    escalate to the Head of Plant Operations, whose decision is final. */
 async function viewBoardReqs(){
-  el('view').innerHTML='<div class="empty">Loading board requests…</div>';
+  var _vs=render._seq;   // this page's ticket — see VIEW()
+  VIEW(_vs).innerHTML='<div class="empty">Loading board requests…</div>';
   var q=await supa.from('pmes_board_requests').select('*').order('created_at',{ascending:false}).limit(200);
   if(q.error) throw q.error;
   var rows=(q.data||[]).filter(function(r){ return ['pending_supervisor','pending_manager','cancelled'].indexOf(r.status)<0; });
   var canDecide=!!(ME.caps.can_issue||ME.caps.can_release), isHead=!!ME.caps.is_plant_head;
   var mq=rows.filter(function(r){return r.mr_id}).length?await supa.from('adm_material_requests').select('id,mr_no,status').in('id',rows.filter(function(r){return r.mr_id}).map(function(r){return r.mr_id})):{data:[]};
   var mrNo={}; (mq.data||[]).forEach(function(m){mrNo[m.id]=m});
-  el('view').innerHTML='<div class="card"><h3>Extra board requests</h3>'+
+  VIEW(_vs).innerHTML='<div class="card"><h3>Extra board requests</h3>'+
     '<div class="info" style="margin-bottom:8px"><b>What this is for:</b> the job\'s boards already came with its first Material request. '+
     'This list is only for <b>additional</b> boards production needs later — when boards that arrived are rejected or have defects and the cutting plan comes up short.</div>'+
     '<p class="sub">Additional boards asked for by production after inspecting what arrived (rejected or defective boards). '+
@@ -1645,7 +1658,8 @@ async function _brFinal(id,approve,note){
 
 /* ================= 5. DASHBOARD ================= */
 async function viewDash(){
-  el('view').innerHTML='<div class="empty">Building dashboard…</div>';
+  var _vs=render._seq;   // this page's ticket — see VIEW()
+  VIEW(_vs).innerHTML='<div class="empty">Building dashboard…</div>';
   var g=await supa.from('adm_release_gates').select('*');
   var p=await supa.from('adm_purchase_requests').select('*');
   var gates=g.data||[], prs=p.data||[];
@@ -1680,7 +1694,7 @@ async function viewDash(){
     ['msgs_unread','Client replies','unread client messages in HATID','lg_msgs']];
   try{ await Promise.race([lgLoad(false,LG.ov?LG.ov.today:null),new Promise(function(ok){setTimeout(ok,4000)})]); lgNeedCounts() }catch(e){}
   var needs=tiles.filter(function(t){return N[t[0]]>0});
-  el('view').innerHTML=
+  VIEW(_vs).innerHTML=
     '<div class="card needs"><h3>Needs you</h3>'+
     (needs.length?'<p class="sub">What is waiting for you now. Click a tile to go there.</p><div class="grid g4">'+
       needs.map(function(t){return '<div class="kpi act" data-act="go" data-tab="'+t[3]+'"><div class="lbl">'+esc(t[1])+'</div>'+
@@ -1721,9 +1735,10 @@ async function viewDash(){
 
 /* ================= 6. PROVISIONS ================= */
 async function viewProv(){
+  var _vs=render._seq;   // this page's ticket — see VIEW()
   var rr=await supa.from('adm_room_reservations').select('*').order('starts_at').limit(50);
   var hr=await supa.from('adm_hris_feed').select('*').order('received_at',{ascending:false}).limit(50);
-  el('view').innerHTML=
+  VIEW(_vs).innerHTML=
     '<div class="card"><h3>Delivery schedule</h3>'+
       '<p class="sub">Outbound delivery schedules now come live from HATID — see <b>Logistics</b>.</p>'+
       '<button class="primary" data-act="go" data-tab="lg_sched"><i class="ti ti-truck-delivery"></i> Open delivery schedules</button></div>'+
@@ -1873,7 +1888,7 @@ function lgLive(fn){
 }
 document.addEventListener('visibilitychange',function(){ if(!document.hidden&&/^lg_/.test(TAB)) render() });
 
-function lgFail(e){
+function lgFail(e){ if(!/^lg_/.test(TAB)) return;
   el('view').innerHTML='<div class="card"><h3>Logistics could not load</h3><p class="sub">KEYSTONE reads this from HATID. '+
     'The rest of KEYSTONE still works.</p><pre class="prev">'+esc(errMsg(e))+'</pre>'+
     '<button class="primary" data-act="lgRetry">Try again</button></div>';
@@ -1882,11 +1897,12 @@ function lgUpdated(){return '<span class="mini" id="lgUpd"><span class="lg-dot">
 
 /* ---------- TODAY: every drop of the day, grouped by truck and trip, as it happens ---------- */
 async function viewLgLive(){
-  if(!LG.ov) el('view').innerHTML='<div class="empty">Loading today’s deliveries from HATID…</div>';
+  var _vs=render._seq;   // this page's ticket — see VIEW()
+  if(!LG.ov) VIEW(_vs).innerHTML='<div class="empty">Loading today’s deliveries from HATID…</div>';
   try{ await lgLoad(false,LG.date) }catch(e){ return lgFail(e) }
   var ov=LG.ov, f=LG.f;
   var cos=(LG.me&&LG.me.companies)||['WCLI','MSSI','CWLI'];
-  el('view').innerHTML=
+  VIEW(_vs).innerHTML=
     '<div class="card"><div class="row" style="justify-content:space-between"><div><h3>Deliveries · '+esc(lgDay(ov.date))+'</h3>'+
       '<p class="sub" style="margin:0">From HATID, as the drivers report it. Tap a drop for its full history'+(LG.me&&LG.me.messages?' and client messages':'')+'.</p></div>'+
       lgUpdated()+'</div>'+
@@ -2002,12 +2018,13 @@ async function lgJob(id){
 
 /* ---------- DELIVERY SCHEDULES: FO-LGTS-02 and its sign-offs ---------- */
 async function viewLgSched(){
-  if(!LG.ov) el('view').innerHTML='<div class="empty">Loading delivery schedules from HATID…</div>';
+  var _vs=render._seq;   // this page's ticket — see VIEW()
+  if(!LG.ov) VIEW(_vs).innerHTML='<div class="empty">Loading delivery schedules from HATID…</div>';
   try{ await lgLoad(false) }catch(e){ return lgFail(e) }
   lgDrawSched();
   lgLive(async function(){ try{ await lgLoad(true); lgDrawSched() }catch(e){} });
 }
-function lgDrawSched(){
+function lgDrawSched(){ if(!/^lg_/.test(TAB)) return;
   var ov=LG.ov, mine=lgNeedsMe(), st=ov.staff;
   var list=(ov.schedules||[]).slice(), un=ov.unprepared||[];
   var notes=(ov.notifications||[]).slice(0,12);
@@ -2105,8 +2122,9 @@ function lgLoadMap(){
 function lgPosState(p){if(!p)return 'none';var age=(Date.now()-new Date(p.at))/60000;return age>15?'old':Number(p.speed||0)>=5?'mv':'st'}
 var LG_PIN={scheduled:'#5a6b7d',dispatched:'#d97706',in_progress:'#d97706',completed:'#1f9d55',issue:'#c53030'};
 async function viewLgMap(){
+  var _vs=render._seq;   // this page's ticket — see VIEW()
   if(LG.map&&LG.map.m){try{LG.map.m.remove()}catch(e){}} LG.map=null;
-  el('view').innerHTML='<div class="card"><div class="row" style="justify-content:space-between"><div><h3>Map · '+esc(lgDay(LG.date||(LG.ov&&LG.ov.today)))+'</h3>'+
+  VIEW(_vs).innerHTML='<div class="card"><div class="row" style="justify-content:space-between"><div><h3>Map · '+esc(lgDay(LG.date||(LG.ov&&LG.ov.today)))+'</h3>'+
     '<p class="sub" style="margin:0">Trucks where their tracker last reported, the day’s drop sites and the plants. Tap a truck for its route today.</p></div><span id="lgUpdWrap"></span></div></div>'+
     '<div class="lg-mapwrap"><div id="lgMap"></div><div id="lgMapList" class="lg-maplist"></div></div>';
   var ml;
@@ -2175,8 +2193,9 @@ async function lgTrail(id){
 
 /* ---------- CLIENT MESSAGES: everything HATID sent to and received from clients ---------- */
 async function viewLgMsgs(){
-  if(LG.me&&!LG.me.messages){el('view').innerHTML='<div class="card"><h3>Client messages</h3><div class="empty">Client messages are open to KEYSTONE Admins, Directors and Managers.</div></div>';return}
-  if(!LG.msgs) el('view').innerHTML='<div class="empty">Loading client messages from HATID…</div>';
+  var _vs=render._seq;   // this page's ticket — see VIEW()
+  if(LG.me&&!LG.me.messages){VIEW(_vs).innerHTML='<div class="card"><h3>Client messages</h3><div class="empty">Client messages are open to KEYSTONE Admins, Directors and Managers.</div></div>';return}
+  if(!LG.msgs) VIEW(_vs).innerHTML='<div class="empty">Loading client messages from HATID…</div>';
   try{ await lgLoadMsgs() }catch(e){ return lgFail(e) }
   lgDrawMsgs();
   lgLive(async function(){ try{ await lgLoadMsgs(); lgDrawMsgs(true) }catch(e){} });
@@ -2189,7 +2208,7 @@ async function lgLoadMsgs(){
   Object.keys(T).forEach(function(k){var t=T[k];t.items.sort(function(a,b){return new Date(a.at)-new Date(b.at)});t.last=t.items.length?new Date(t.items[t.items.length-1].at).getTime():0});
   LG.msgs={T:T,at:Date.now()}; LG.at=LG.at||Date.now();
 }
-function lgDrawMsgs(keep){
+function lgDrawMsgs(keep){ if(!/^lg_/.test(TAB)) return;
   var T=LG.msgs.T, q=(LG.msgQ||'').toLowerCase();
   var list=Object.keys(T).map(function(k){return T[k]}).sort(function(a,b){return b.last-a.last}).filter(function(t){
     if(!q) return true; var j=t.job||{}; return [j.client,j.serial,j.contact,j.phone].concat(t.items.map(function(i){return i.body})).join(' ').toLowerCase().indexOf(q)>=0});
