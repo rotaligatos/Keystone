@@ -695,13 +695,29 @@ function render(){
 /* ================= 1. RELEASE QUEUE ================= */
 async function viewQueue(){
   var _vs=render._seq;   // this page's ticket — see VIEW()
-  VIEW(_vs).innerHTML='<div class="empty">Loading approved quotations…</div>';
+  // The list seen last time shows at once; the fresh one replaces it when it arrives (only if it changed).
+  if(QCACHE) drawQueuePage(QCACHE,_vs);
+  else VIEW(_vs).innerHTML='<div class="empty">Loading approved quotations…</div>';
+  // Only approved quotations, and no cut-off: this used to fetch the top 300 by value and drop the
+  // unapproved ones afterwards, so with more than 300 quotations an approved job with a small total
+  // could silently fall off the list.
   var q=await supa.from('adm_v_release_queue').select('*')
-    .order('total',{ascending:false}).limit(300);
-  if(q.error){VIEW(_vs).innerHTML='<div class="card"><div class="warn">'+
-    esc(errMsg(q.error))+'</div></div>';return}
-
-  QROWS=(q.data||[]).filter(function(r){return r.fq_client_approved||r.iq_client_approved});
+    .or('fq_client_approved.eq.true,iq_client_approved.eq.true')
+    .order('total',{ascending:false}).limit(2000);
+  if(q.error){
+    if(QCACHE){ toast('Could not refresh the Release Queue: '+errMsg(q.error)); return; }
+    VIEW(_vs).innerHTML='<div class="card"><div class="warn">'+esc(errMsg(q.error))+'</div></div>'; return;
+  }
+  var fresh=(q.data||[]).filter(function(r){return r.fq_client_approved||r.iq_client_approved});
+  var sig=JSON.stringify(fresh);
+  if(QCACHE&&sig===QCACHE_SIG) return;          // nothing changed since the cached draw
+  QCACHE=fresh; QCACHE_SIG=sig;
+  drawQueuePage(fresh,_vs);
+}
+var QCACHE=null, QCACHE_SIG='';
+function drawQueuePage(list,_vs){
+  if(_vs!==undefined&&_vs!==render._seq) return;   // the person has moved to another tab
+  QROWS=list;
   var rows=QROWS;
   var fq=rows.filter(function(r){return r.fq_client_approved});
   var iq=rows.filter(function(r){return !r.fq_client_approved});
