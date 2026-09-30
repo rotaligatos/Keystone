@@ -111,6 +111,7 @@ nav.subtabs button{padding:7px 12px;font-size:13px}
 .lg-row{cursor:pointer}
 .lg-badrow td{background:#2c1615}
 .lg-me td{background:#2a2110}
+.pk-alarm-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:80;background:#3a1412;color:var(--red-ink);border:1px solid var(--red);border-radius:12px;padding:10px 16px;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,.45);max-width:min(720px,calc(100% - 24px));font-size:14px}
 .kpi.lg-bad{border-color:var(--red)}.kpi.lg-bad .val{color:var(--red-ink)}
 button.lg-sm{padding:4px 10px;font-size:12px}
 a.lg-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;background:var(--accent);color:#fff;text-decoration:none;font-weight:600;font-size:13px;white-space:nowrap}
@@ -529,7 +530,7 @@ var GROUPS=[
   {k:'purch', t:'Purchasing',    i:'ti-file-dollar',   leaves:[['review','My requests'],['appr','Approvals'],['po','Purchase orders'],['src','Suppliers']]},
   {k:'wh',    t:'Warehouse',     i:'ti-package',       leaves:[['mr','Material requests'],['boards','Extra board requests']]},
   // Rommel 2026-09-28: read-only view of HATID (logistics). Signing stays in HATID.
-  {k:'logi',  t:'Logistics',     i:'ti-truck-delivery',leaves:[['lg_live','Today'],['lg_sched','Delivery schedules'],['lg_map','Map'],['lg_msgs','Client messages']]},
+  {k:'logi',  t:'Logistics',     i:'ti-truck-delivery',leaves:[['lg_live','Today'],['lg_pickup','Pick-ups'],['lg_sched','Delivery schedules'],['lg_map','Map'],['lg_msgs','Client messages']]},
   {k:'more',  t:'More',          i:'ti-dots',          leaves:[['prov','Plant & HRIS']]}
 ];
 var LAST={};
@@ -586,7 +587,7 @@ async function refreshNeeds(force){
     lgNeedCounts();
     _needAt=Date.now(); _needBusy=null; drawTabs();
     // Logistics comes from HATID — fetched on its own so a slow HATID never holds up the rest.
-    lgLoad(false).then(function(){lgNeedCounts();drawTabs()}).catch(function(){});
+    lgLoad(false).then(function(){lgNeedCounts();drawTabs();pkPoll()}).catch(function(){});
   })().catch(function(){_needBusy=null});
   return _needBusy;
 }
@@ -679,7 +680,7 @@ function render(){
   var fn = TAB==='review'?viewReview : TAB==='appr'?viewApprovals : TAB==='po'?viewPO
          : TAB==='queue'?viewQueue : TAB==='src'?viewSourcing
          : TAB==='mr'?viewMR : TAB==='boards'?viewBoardReqs : TAB==='dash'?viewDash
-         : TAB==='lg_live'?viewLgLive : TAB==='lg_sched'?viewLgSched : TAB==='lg_map'?viewLgMap : TAB==='lg_msgs'?viewLgMsgs : viewProv;
+         : TAB==='lg_live'?viewLgLive : TAB==='lg_pickup'?viewLgPickup : TAB==='lg_sched'?viewLgSched : TAB==='lg_map'?viewLgMap : TAB==='lg_msgs'?viewLgMsgs : viewProv;
   if(!/^lg_/.test(TAB)) clearInterval(_lgTimer);
   // A screen that fails must say why. Silence here reads as "the app is broken".
   // After an action the screen re-renders; stay where the person was instead of jumping to the top.
@@ -1910,6 +1911,89 @@ function lgFail(e){ if(!/^lg_/.test(TAB)) return;
     '<button class="primary" data-act="lgRetry">Try again</button></div>';
 }
 function lgUpdated(){return '<span class="mini" id="lgUpd"><span class="lg-dot"></span> Live · updated '+esc(lgTime(new Date(LG.at).toISOString()))+'</span>'}
+
+/* ---------- PICK-UPS (HATID Pick-up mode): live queue with timers, alarms, promptness, balances, TC % both ways ----------
+   Percentages and counts only — no peso amounts. The over-target alarm shows on every KEYSTONE screen. */
+var PK_KIND={scheduled:'Scheduled',same_day:'Same-day',walkin:'Walk-in',courier:'Grab / Lalamove rider',all:'All'};
+var PK_ST={waiting:'Waiting for SI',notified:'SI sent — warehouse to accept',accepted:'Being prepared',ready:'Ready for loading'};
+var PK_SITE={plant1:'Plant 1',annex:'Annex'};
+function pkMin(v){return (Date.now()-new Date(v.arrived))/60000/Math.max(1,v.sos||1)}
+function pkTgt(co){var t=(LG.pk&&LG.pk.targets||{})[co]||{};return {t:Number(t.target||15),w:Number(t.warn||10)}}
+function pkOver(){return ((LG.pk&&LG.pk.live)||[]).filter(function(v){return v.counted&&pkMin(v)>=pkTgt(v.company).t})}
+async function pkPoll(){
+  try{ LG.pk=await lgCall('pickup',LG.pkArgs||{}); LG.pkAt=Date.now(); }catch(e){ return; }
+  var over=pkOver(), ids=over.map(function(v){return v.label});
+  NEED.lg_pickup=over.length; drawTabs();
+  var fresh=ids.filter(function(k){return (LG.pkSeen||[]).indexOf(k)<0});
+  if(LG.pkSeen&&fresh.length){
+    var msg='Pick-up over the target: '+fresh.join(', ');
+    toast(msg,'err'); try{ if(window.Notification&&Notification.permission==='granted') new Notification('KEYSTONE — Pick-ups',{body:msg,icon:'icons/icon-192.png'}) }catch(e){}
+  }
+  LG.pkSeen=ids; pkBanner();
+  if(TAB==='lg_pickup') pkDraw();
+}
+function pkBanner(){
+  var b=el('pkAlarm'); if(!b){ b=document.createElement('div'); b.id='pkAlarm'; b.className='pk-alarm-bar'; b.setAttribute('role','alert');
+    b.onclick=function(){go('lg_pickup')}; document.body.appendChild(b); }
+  var over=pkOver();
+  b.style.display=over.length?'':'none';
+  b.innerHTML=over.length?'<i class="ti ti-alarm"></i> Pick-up over the target: <b>'+over.map(function(v){return esc(v.label)+' · '+esc(v.client||'')+' ('+Math.floor(pkMin(v)*Math.max(1,v.sos||1))+' min)'}).join('</b>, <b>')+'</b> — open':'';
+}
+setInterval(function(){ if(!document.hidden&&LG.me) pkPoll() },60000);
+setInterval(function(){ if(LG.pk){ pkBanner(); if(TAB==='lg_pickup') pkDrawLive() } },15000);
+
+async function viewLgPickup(){
+  var _vs=render._seq;
+  if(!LG.pk) VIEW(_vs).innerHTML='<div class="empty">Loading pick-ups from HATID…</div>';
+  try{ LG.pk=await lgCall('pickup',LG.pkArgs||{}); LG.pkAt=Date.now(); }catch(e){ return lgFail(e) }
+  var a=LG.pkArgs||{};
+  VIEW(_vs).innerHTML='<div class="card"><div class="row" style="justify-content:space-between"><div><h3>Pick-ups</h3>'+
+      '<p class="sub" style="margin:0">From HATID Pick-up mode: clients in the queue now, and how many were served within the target.</p></div>'+
+      '<span class="mini"><span class="lg-dot"></span> Live</span></div>'+
+    '<div class="row" style="margin-top:10px"><label class="mini">From <input type="date" id="pkFrom" value="'+esc(LG.pk.from)+'" style="width:auto"></label>'+
+      '<label class="mini">To <input type="date" id="pkTo" value="'+esc(LG.pk.to)+'" style="width:auto"></label></div></div>'+
+    '<div id="pkLive"></div><div id="pkStats"></div>';
+  el('pkFrom').onchange=el('pkTo').onchange=function(){LG.pkArgs={from:el('pkFrom').value,to:el('pkTo').value};viewLgPickup()};
+  pkDraw(); pkBanner();
+  lgLive(pkPoll);
+}
+function pkDraw(){ pkDrawLive(); pkDrawStats(); }
+function pkDrawLive(){
+  var d=LG.pk, box=el('pkLive'); if(!d||!box) return;
+  var live=d.live||[], td=d.today_done||{n:0,ok:0};
+  var cell=function(v){ var m=pkMin(v), tg=pkTgt(v.company), cls=!v.counted?'p-grey':m>=tg.t?'p-red':m>=tg.w?'p-amber':'p-green';
+    return '<tr><td><b class="mono">'+esc(v.label)+'</b>'+(v.courier?' 🛵':'')+'</td><td>'+esc(v.client||'—')+'</td><td>'+esc(PK_SITE[v.site]||v.site)+'</td><td>'+esc(PK_ST[v.status]||v.status)+'</td>'+
+      '<td><span class="pill '+cls+'">'+(v.counted?Math.floor(m)+' min'+(v.sos>1?' / SO':''):'not timed')+'</span></td></tr>' };
+  box.innerHTML='<div class="grid g4 lg-kpis" style="margin-bottom:12px">'+
+      '<div class="kpi'+(pkOver().length?' lg-bad':'')+'"><div class="lbl">In the queue now</div><div class="val">'+live.length+'</div><div class="hint">'+pkOver().length+' over the target</div></div>'+
+      kpi('Served today',td.n,td.n?Math.round(td.ok/td.n*100)+'% within target':'none timed yet')+
+      kpi('Balances waiting',(d.balances||[]).length,'clients to come back')+
+      kpi('No-shows',d.no_shows||0,'in the period')+'</div>'+
+    '<div class="card"><h3>Queue now</h3>'+(live.length?'<div class="tbl-wrap"><table style="width:100%"><thead><tr><th>No.</th><th>Client</th><th>Site</th><th>Step</th><th>Waiting</th></tr></thead><tbody>'+
+      live.map(cell).join('')+'</tbody></table></div>':'<div class="mini">Nobody in the pick-up queue right now.</div>')+'</div>';
+}
+function pkDrawStats(){
+  var d=LG.pk, box=el('pkStats'); if(!d||!box) return;
+  var S=d.stats||{}, all=S.all||{n:0,ok:0}, pc=function(x){return x&&x.n?Math.round(x.ok/x.n*100)+'%':'—'}, f1=function(x){return x==null?'—':String(x)};
+  var tc=d.tc||{};
+  box.innerHTML='<div class="grid g4 lg-kpis" style="margin:12px 0">'+
+      kpi('Within target',pc(all),(all.ok||0)+' of '+(all.n||0)+' SOs · '+esc(lgDay(d.from))+' – '+esc(lgDay(d.to)))+
+      kpi('Average time',all.avg!=null?all.avg+' min':'—','per SO, arrival → loaded')+
+      kpi('TC % — delivery only',tc.delivery!=null?tc.delivery+'%':'—','delivery cost ÷ delivered sales')+
+      kpi('TC % — with pick-ups',tc.combined!=null?tc.combined+'%':'—',tc.pickup_share!=null?'pick-ups are '+tc.pickup_share+'% of sales':'pick-ups carry no delivery cost')+'</div>'+
+    '<div class="grid g2">'+
+    '<div class="card"><h3>By type</h3><table style="width:100%"><thead><tr><th>Type</th><th class="num">SOs</th><th class="num">Within</th><th class="num">%</th><th class="num">Avg min</th></tr></thead><tbody>'+
+      ['scheduled','same_day','walkin','courier'].filter(function(k){return S[k]}).map(function(k){var x=S[k];return '<tr><td>'+PK_KIND[k]+'</td><td class="num">'+x.n+'</td><td class="num">'+x.ok+'</td><td class="num">'+pc(x)+'</td><td class="num">'+f1(x.avg)+'</td></tr>'}).join('')+
+      '</tbody></table>'+(!all.n?'<div class="mini">No timed pick-ups in this period yet.</div>':'')+
+      '<div class="mini" style="margin-top:6px">'+(d.not_counted||0)+' late-ticket / balance pick-ups recorded but not timed.</div></div>'+
+    '<div class="card"><h3>Where the time goes</h3><table style="width:100%"><thead><tr><th>Step</th><th>Team</th><th class="num">Avg min per SO</th></tr></thead><tbody>'+
+      '<tr><td>Arrival → SI sent</td><td>Sales Support</td><td class="num">'+f1(all.si)+'</td></tr><tr><td>SI → accepted</td><td>Warehouse</td><td class="num">'+f1(all.acc)+'</td></tr>'+
+      '<tr><td>Accepted → ready</td><td>Warehouse</td><td class="num">'+f1(all.prep)+'</td></tr><tr><td>Ready → loaded</td><td>Logistics</td><td class="num">'+f1(all.load)+'</td></tr></tbody></table>'+
+      '<h3 style="margin-top:12px">By site</h3>'+(Object.keys(d.by_site||{}).length?'<table style="width:100%"><tbody>'+Object.keys(d.by_site).map(function(k){var x=d.by_site[k];return '<tr><td>'+esc(PK_SITE[k]||k)+'</td><td class="num">'+x.n+' SOs</td><td class="num">'+pc(x)+' within</td></tr>'}).join('')+'</tbody></table>':'<div class="mini">—</div>')+'</div>'+
+    '</div>'+
+    '<div class="card"><h3>Balances waiting for pick-up</h3>'+((d.balances||[]).length?'<table style="width:100%"><thead><tr><th>SO</th><th>Client</th><th>Site</th><th class="num">Lines left</th><th>Since</th></tr></thead><tbody>'+
+      d.balances.map(function(b){return '<tr><td class="mono">'+esc(b.so)+'</td><td>'+esc(b.client||'')+'</td><td>'+esc(PK_SITE[b.site]||b.site)+'</td><td class="num">'+b.left+'</td><td>'+esc(lgDT(b.since))+'</td></tr>'}).join('')+'</tbody></table>':'<div class="mini">None.</div>')+'</div>';
+}
 
 /* ---------- TODAY: every drop of the day, grouped by truck and trip, as it happens ---------- */
 async function viewLgLive(){
