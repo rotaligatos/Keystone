@@ -567,7 +567,7 @@ async function refreshNeeds(force){
       supa.from('adm_material_requests').select('id,status').in('status',['authorized','partially_issued']).limit(1000),
       supa.from('pmes_board_requests').select('id,status').in('status',['sent_to_keystone','escalated']).limit(500)
     ]);
-    var gq=q[0].data||[], prs=q[1].data||[], pos=q[2].data||[], mrs=q[3].data||[], brs=q[4].data||[];
+    var gq=(q[0].data||[]).filter(function(r){return !isTestSerial(r.serial)}), prs=q[1].data||[], pos=q[2].data||[], mrs=q[3].data||[], brs=q[4].data||[];
     var fq=gq.filter(function(r){return r.fq_client_approved});
     var mine=function(r){return ((r.requested_by||'').toLowerCase()===ME.email)||((r.signed_by||'').toLowerCase()===ME.email)};
     var d={
@@ -710,12 +710,21 @@ async function viewQueue(){
     VIEW(_vs).innerHTML='<div class="card"><div class="warn">'+esc(errMsg(q.error))+'</div></div>'; return;
   }
   var fresh=(q.data||[]).filter(function(r){return r.fq_client_approved||r.iq_client_approved});
+  KS_TEST_N=fresh.filter(function(r){return isTestSerial(r.serial)}).length;
+  if(!(KS_SHOW_TEST&&ksCanSeeTest())) fresh=fresh.filter(function(r){return !isTestSerial(r.serial)});
   var sig=JSON.stringify(fresh);
   if(QCACHE&&sig===QCACHE_SIG) return;          // nothing changed since the cached draw
   QCACHE=fresh; QCACHE_SIG=sig;
   drawQueuePage(fresh,_vs);
 }
 var QCACHE=null, QCACHE_SIG='';
+/* Test quotations (2026-10-10). Modcraft numbers a test quotation QT-X…; it runs the whole live
+   chain (gate, MRF, Job Order, PMES) so the chain can be tested end to end. It must never sit in
+   the real queue or the counts: hidden for everyone, shown only to an Admin/Director who asks. */
+function isTestSerial(s){ return /^QT-X/.test(String(s||'')); }
+var KS_SHOW_TEST=false, KS_TEST_N=0;
+function ksCanSeeTest(){ return ME.role==='Admin'||ME.role==='Director'; }
+function ksToggleTest(){ KS_SHOW_TEST=!KS_SHOW_TEST; QCACHE=null; QCACHE_SIG=''; render(); }
 function drawQueuePage(list,_vs){
   if(_vs!==undefined&&_vs!==render._seq) return;   // the person has moved to another tab
   QROWS=list;
@@ -727,6 +736,8 @@ function drawQueuePage(list,_vs){
     '<p class="sub">Quotations the client has approved. A final-approved quotation '+
     'stays <b>pending</b> until the agreed payment terms are met or someone vouches for it — '+
     'only then can the material request and Job Order be unlocked in Modcraft PMES.</p>'+
+    (KS_TEST_N&&ksCanSeeTest()?'<p class="sub"><button class="ghost" onclick="ksToggleTest()" style="padding:3px 10px;font-size:12px;color:#b91c1c;border-color:#fca5a5">'+
+      (KS_SHOW_TEST?'Hide':'Show')+' '+KS_TEST_N+' test quotation'+(KS_TEST_N===1?'':'s')+'</button></p>':'')+
     '<div class="grid g4">'+
       kpi('Final approved',fq.length,'ready for a payment gate')+
       kpi('Awaiting payment',fq.filter(function(r){return r.gate_status==='pending_payment'}).length,'gate open, terms not met')+
@@ -803,6 +814,7 @@ function gateCard(r){
   var canAct=ME.caps.can_release||ME.caps.can_approve;
   var h='<div class="gate" style="margin-bottom:10px">'+
     '<div class="row" style="flex-wrap:wrap;gap:6px"><b>'+esc(r.serial)+'</b>'+
+      (isTestSerial(r.serial)?'<span class="pill" style="background:#dc2626;color:#fff">TEST</span>':'')+
       (r.revision?'<span class="pill p-amber">Revision R'+esc(r.revision)+'</span>':'')+
       (r.gate_id?pill(r.gate_status):'<span class="pill p-grey">no gate</span>')+
       (r.pmes_job_code?'<span class="pill p-blue">PMES '+esc(r.pmes_job_code)+'</span>':
