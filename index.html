@@ -2194,7 +2194,7 @@ function importSuppliers(){
    - purchase order lines (has a Partner/Vendor column): suppliers = the partners; their items keep the latest price;
    - vendor list (has a Name column).
    A file with neither is refused — never guess a column (the first version read dates as supplier names). */
-var KS_OWN_COMPANY_RE=/world\s*class\s*laminate|module\s*system|cebu\s*world\s*laminate/i;
+// Our own companies stay in: WCL buys from Module System and Services (Rommel, 2026-10-18).
 function supParseOdoo(aoa){
   if(!aoa||aoa.length<2) return {error:'The file is empty.'};
   var H=aoa[0].map(function(h){var x=String(h||'').toLowerCase().trim(); return x.split('/').pop().trim();});
@@ -2210,7 +2210,6 @@ function supParseOdoo(aoa){
     var by={}, order=[], internal={}, lines=0;
     aoa.slice(1).forEach(function(r){
       var sup=txt(r[part]); if(!sup) return;
-      if(KS_OWN_COMPANY_RE.test(sup)){ internal[sup]=1; return; }
       var item=txt(cP>=0?r[cP]:'')||txt(cD>=0?r[cD]:''), price=parseFloat(r[cPr]), qty=cQ>=0?parseFloat(r[cQ]):1;
       if(!by[sup]){ by[sup]={name:sup,products:{}}; order.push(sup); }
       if(!item||!(qty>0)||/amount adjustment/i.test(item)) return;
@@ -2220,7 +2219,7 @@ function supParseOdoo(aoa){
       if(!cur||(price!=null&&(cur.price==null||(dt&&(!cur.date||dt>cur.date))))) by[sup].products[k]={item:item,unit:unit,price:price,date:dt,note:cRef>=0&&txt(r[cRef])?'Last bought on '+txt(r[cRef]).split(' ')[0]:''};
     });
     var rows=order.map(function(n){var s=by[n]; return {name:s.name,products:Object.keys(s.products).map(function(k){return s.products[k]})}});
-    if(!rows.length) return {error:'No suppliers found in the Partner column (our own companies are left out).'};
+    if(!rows.length) return {error:'No suppliers found in the Partner column.'};
     return {mode:'lines',rows:rows,lineCount:lines,internal:Object.keys(internal)};
   }
   var c={ref:col(/^(external )?id$/),name:col(/^(display name|name|company name|vendor name)$/),
@@ -2231,7 +2230,7 @@ function supParseOdoo(aoa){
   var out=[];
   aoa.slice(1).forEach(function(r){
     var g=function(k){return c[k]>=0?txt(r[c[k]]):''};
-    var nm=g('name'); if(!nm||KS_OWN_COMPANY_RE.test(nm)) return;
+    var nm=g('name'); if(!nm) return;
     out.push({name:nm,odoo_ref:g('ref'),contact_phone:g('phone')||g('mobile'),contact_email:g('email'),tin:g('tin'),
       address:[g('street'),g('street2')].filter(Boolean).join(', '),city:g('city'),country:g('country'),website:g('web'),
       payment_terms:g('terms'),contact_person:g('contact'),
