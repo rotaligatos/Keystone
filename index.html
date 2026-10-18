@@ -716,7 +716,7 @@ async function viewQueue(){
   var fresh=(q.data||[]).filter(function(r){return r.fq_client_approved});
   // Advance canvassing (Rommel, 2026-10-18): purchasing may SEE the outsource items of a quotation the
   // client has not final-approved yet, to ask suppliers early. No payment, gate or purchase request.
-  var iqq=await supa.rpc('adm_canvass_list');   // only those with outsource items
+  var iqq=await supa.rpc('adm_fq_waiting_list');   // Final Quotations waiting for the client, with their locked date
   var iqFresh=(iqq.data||[]).filter(function(r){return !isTestSerial(r.serial)||(KS_SHOW_TEST&&ksCanSeeTest())});
   CANV_ROWS=iqFresh;
   KS_TEST_N=fresh.filter(function(r){return isTestSerial(r.serial)}).length;
@@ -772,12 +772,18 @@ function drawQueuePage(list,_vs){
   var tb=function(k,t,n){ var on=QF.tab===k; return '<button class="'+(on?'on':'')+'" data-act="qfTab" data-tab="'+k+'" style="border:none;background:none;cursor:pointer;padding:9px 16px;font-size:14px;'+
     'font-weight:'+(on?'700':'500')+';color:'+(on?'inherit':'var(--muted,#9aa3ad)')+';border-bottom:2px solid '+(on?'var(--accent,#5b8def)':'transparent')+'">'+t+' <span class="tabcount">'+n+'</span></button>'; };
   h+='<div class="row" style="gap:2px;border-bottom:1px solid var(--line,#2a2f36);margin:4px 0 12px;flex-wrap:wrap">'+
-       QF_TABS.map(function(t){ return tb(t[0],t[1],t[0]==='waiting'?canv.length:fq.filter(function(r){return qfTabOf(r)===t[0]}).length); }).join('')+'</div>';
+       QF_TABS.map(function(t){ return tb(t[0],t[1],t[0]==='waiting'?canv.filter(function(r){return qfInDates(r,'waiting')}).length
+          :fq.filter(function(r){return (t[0]==='all'||qfTabOf(r)===t[0])&&qfInDates(r,t[0])}).length); }).join('')+'</div>';
+  h+='<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 12px">'+
+       '<span class="mini">'+esc(qfDateLabel(QF.tab))+' from</span><input type="date" value="'+esc(QF.from)+'" onchange="qfSetDate(\'from\',this.value)" style="width:160px">'+
+       '<span class="mini">to</span><input type="date" value="'+esc(QF.to)+'" onchange="qfSetDate(\'to\',this.value)" style="width:160px">'+
+       ((QF.from||QF.to)?'<button class="ghost" onclick="QF.from=\'\';QF.to=\'\';drawQueuePage(QROWS)" style="padding:3px 10px;font-size:12px">Clear dates</button>':'')+
+     '</div>';
   if(QF.tab!=='waiting'){
   h+='<div class="card"><h3>'+esc((QF_TABS.filter(function(t){return t[0]===QF.tab})[0]||['',''])[1])+'</h3>'+
      '<p class="sub">'+({approved:'Client approved the Final Quotation, not yet released to production. Open the payment gate, record payments, then unlock.',
        paid:'Released to production and fully paid.',balance:'Released to production with a balance still owed — follow up the payment.',
-       vouched:'Released to production on someone\'s vouch, before the payment terms were met.'}[QF.tab]||'')+'</p>'+
+       vouched:'Released to production on someone\'s vouch, before the payment terms were met.',all:'Every quotation the client has final-approved — released or not.'}[QF.tab]||'')+'</p>'+
      '<div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:10px">'+
        '<input id="qfSearch" placeholder="Search quotation, client, project, prepared by, agent…" style="flex:1;min-width:240px" value="'+esc(QF.q)+'">'+
        '<select id="qfCo" style="width:210px;flex:0 0 210px"><option value="">All companies</option><option value="W">World Class Laminate</option>'+
@@ -792,11 +798,12 @@ function drawQueuePage(list,_vs){
   h+='<div class="card"><h3>Waiting for client approval</h3>'+
      '<p class="sub">Final Quotations locked and sent, not yet approved by the client. View only: see each one\'s outsource items to canvass suppliers early. '+
      'No payment, gate or purchase request until the client approves. Quotations still at the Initial Quotation stage do not appear in KEYSTONE.</p>'+
-     (canv.length?canv.map(function(r){return '<div class="gate" style="margin-bottom:8px">'+
+     (canv.filter(function(r){return qfInDates(r,'waiting')}).length?canv.filter(function(r){return qfInDates(r,'waiting')}).map(function(r){return '<div class="gate" style="margin-bottom:8px">'+
         '<div class="row" style="flex-wrap:wrap;gap:6px"><b>'+esc(r.serial)+'</b>'+
         (isTestSerial(r.serial)?'<span class="pill" style="background:#dc2626;color:#fff">TEST</span>':'')+
         '<span>'+esc(r.client_name||'—')+(r.project_name?' — '+esc(r.project_name):'')+'</span>'+
         '<span class="mini">'+esc(r.company||'')+(r.prepared_by?' · '+esc(r.prepared_by):'')+' · '+(+r.lines?r.lines+' outsource item'+(+r.lines===1?'':'s')+' · est. '+money(r.est_total):'no outsource items')+'</span>'+
+        (r.final_locked_at?'<span class="mini">Final locked '+dt(r.final_locked_at)+'</span>':'')+
         '<b style="margin-left:6px">'+money(r.total)+'</b>'+
         '<div class="spacer" style="flex:1"></div>'+
         (+r.lines?'<button class="ghost" data-act="canvItems" data-serial="'+esc(r.serial)+'" style="padding:3px 10px;font-size:12px"><i class="ti ti-list-search"></i> Outsource items</button>':'')+
@@ -816,7 +823,7 @@ function drawQueuePage(list,_vs){
 }
 
 /* Release Queue search + filters. Kept across re-renders so an action never loses the person's place. */
-var QROWS=[], QF={q:'',co:'',st:'',tab:'approved'};
+var QROWS=[], QF={q:'',co:'',st:'',tab:'approved',from:'',to:''};
 function qfTab(t){ QF.tab=t; drawQueuePage(QROWS); }
 // Released jobs split by how they were released (Rommel, 2026-10-18): on a vouch, fully paid, or with
 // a balance still owed. Everything client-approved and not yet released is "approved".
@@ -826,7 +833,19 @@ function qfTabOf(r){
   return (+r.balance||0)>0.005?'balance':'paid';
 }
 var QF_TABS=[['waiting','Waiting for client approval'],['approved','Approved — not released'],
-  ['paid','Released — fully paid'],['balance','Released — with balance'],['vouched','Released — vouched']];
+  ['paid','Released — fully paid'],['balance','Released — with balance'],['vouched','Released — vouched'],['all','All']];
+// The date a row is filtered by, per tab: final-locked (waiting), released (released tabs), client approved (others).
+function qfDateOf(r,tab){
+  var d=tab==='waiting'?r.final_locked_at:(tab==='paid'||tab==='balance'||tab==='vouched')?r.released_at:r.client_approved_at;
+  return d?String(d).slice(0,10):'';
+}
+function qfInDates(r,tab){
+  if(!QF.from&&!QF.to) return true;
+  var d=qfDateOf(r,tab); if(!d) return false;
+  return (!QF.from||d>=QF.from)&&(!QF.to||d<=QF.to);
+}
+function qfDateLabel(tab){ return tab==='waiting'?'Final locked':(tab==='paid'||tab==='balance'||tab==='vouched')?'Released':'Client approved'; }
+function qfSetDate(which,v){ QF[which]=v||''; drawQueuePage(QROWS); }
 function _coKey(s){s=String(s||'').toLowerCase();
   return s.indexOf('module')>=0?'M':s.indexOf('cebu')>=0?'C':s.indexOf('world class')>=0?'W':''}
 function drawQueueList(){
@@ -834,7 +853,8 @@ function drawQueueList(){
   var words=QF.q.toLowerCase().split(/\s+/).filter(Boolean);
   var list=QROWS.filter(function(r){
     if(!r.fq_client_approved) return false;
-    if(qfTabOf(r)!==QF.tab) return false;
+    if(QF.tab!=='all'&&qfTabOf(r)!==QF.tab) return false;
+    if(!qfInDates(r,QF.tab)) return false;
     if(QF.co&&_coKey(r.company)!==QF.co) return false;
     if(QF.st){
       var st=r.gate_id?r.gate_status:'nogate';
@@ -845,7 +865,7 @@ function drawQueueList(){
     return words.every(function(w){return hay.indexOf(w)>=0});
   });
   box.innerHTML=(list.length?list.map(gateCard).join(''):
-    '<div class="empty">'+(QROWS.some(function(r){return r.fq_client_approved&&qfTabOf(r)===QF.tab})?'Nothing matches the search.':'Nothing here yet.')+'</div>')+
+    '<div class="empty">'+(QROWS.some(function(r){return r.fq_client_approved&&(QF.tab==='all'||qfTabOf(r)===QF.tab)})?'Nothing matches the search.':'Nothing here yet.')+'</div>')+
     '<div class="mini" style="margin-top:6px">'+list.length+' shown</div>';
 }
 
