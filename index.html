@@ -338,6 +338,10 @@ var ACTIONS={
   buildOff:function(){buildOff()},
   openPR:function(d){openPR(d.id)},
   signPR:function(d){signPR(d.id)},
+  newPR:function(){newPR()},
+  myPasscode:function(){myPasscode()},
+  setCharge:function(d){setCharge(d.id,d.c,d.d)},
+  printPRF:function(d){printPRF(d.id)},
   consolidatePR:function(d){consolidatePR(d.id)},
   addQuotation:function(d){addQuotation(d.id)},
   editLine:function(d){editLine(d.id,d.pr)},
@@ -478,6 +482,7 @@ el('authBtn').onclick=async function(){
 async function rpcPreview(fn,args,title,onDone){
   var p=await supa.rpc(fn,Object.assign({},args,{p_confirm:false}));
   if(p.error){toast(errMsg(p.error),'err');return}
+  if(p.data&&p.data.error_message){toast(p.data.error_message,'err');return}
   openModal(
     '<h3>'+esc(title)+'</h3>'+
     '<p class="sub">Review what this will do. Nothing has been saved yet.</p>'+
@@ -495,6 +500,7 @@ async function rpcPreview(fn,args,title,onDone){
     var r=await supa.rpc(fn,Object.assign({},args,{p_confirm:true}));
     closeModal();
     if(r.error){toast(errMsg(r.error),'err');return}
+    if(r.data&&r.data.error_message){toast(r.data.error_message,'err');return}
     toast('Done.','ok');
     CACHE={cfg:CACHE.cfg,chain:CACHE.chain}; _needAt=0;
     if(onDone)onDone(r.data); else render();
@@ -1279,7 +1285,9 @@ async function viewReview(){
   var moving=mine.filter(function(r){return ['pending_manager','pending_hpo'].indexOf(r.status)>=0});
   var done=mine.filter(function(r){return ['approved','ordered','closed','rejected'].indexOf(r.status)>=0});
 
-  var h='<div class="card"><h3>My Purchase Requests</h3>'+
+  var h='<div class="card"><div class="row" style="flex-wrap:wrap;gap:8px"><h3 style="margin:0">My Purchase Requests</h3><div style="flex:1"></div>'+
+      ((ME.caps.can_request||ME.caps.can_source)?'<button class="primary" data-act="newPR"><i class="ti ti-plus"></i> New purchase request</button>':'')+
+      '<button class="ghost" data-act="myPasscode"><i class="ti ti-key"></i> My passcode &amp; signature</button></div>'+
     '<p class="sub">Outsource materials and hardware pulled from approved quotations. '+
     'Review them here — adjust quantities, merge duplicate items, pull in other jobs, '+
     'drop what you don\'t need, then open <b>Canvass</b> to get supplier quotes and choose a supplier for each line — then sign. '+
@@ -1298,8 +1306,8 @@ async function viewReview(){
 
   if(!mine.length){
     h+='<div class="card"><div class="info">You have no purchase requests yet. '+
-       'Go to <b>Payment &amp; Release</b> and press <b>Generate PR</b> on a quotation that has '+
-       'outsource materials.</div></div>';
+       'For outsource items of a client job, go to <b>Payment &amp; Release</b> and press <b>Generate PR</b>. '+
+       'For OPEX or CAPEX purchases, press <b>New purchase request</b>.</div></div>';
   }
   VIEW(_vs).innerHTML=h;
 }
@@ -1339,6 +1347,10 @@ async function openPR(id){
 
   openModal('<h3>'+esc(p.pr_no||'Request')+' '+pill(p.status)+'</h3>'+
     '<p class="sub">'+esc(p.title||'')+'</p>'+
+    '<div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:6px"><span class="mini">Charge to:</span>'+
+      (p.charge_to?'<span class="pill p-blue">'+esc(CHARGE_LABEL[p.charge_to])+'</span>':'<span class="pill p-amber">not set</span>')+
+      (p.department?'<span class="mini">'+esc(p.department)+'</span>':'')+
+      (draft?'<button class="ghost" data-act="setCharge" data-id="'+esc(id)+'" data-c="'+esc(p.charge_to||'')+'" data-d="'+esc(p.department||'')+'" style="font-size:12px;padding:2px 8px">Change</button>':'')+'</div>'+
     (draft
       ? '<div class="info">Change anything you need, then <b>Sign &amp; send</b>. After signing, '+
         'the lines are locked — that is what the Manager and Head of Plant Operations approve.</div>'
@@ -1375,11 +1387,11 @@ async function openPR(id){
     (p.hpo_approved_by?'<div class="mini">Head of Plant Ops approved by '+esc(p.hpo_approved_by)+' on '+dt(p.hpo_approved_at)+'</div>':'')+
     '<div class="row right" style="margin-top:14px">'+
       '<button data-act="closeModal">Close</button>'+
+      '<button data-act="printPRF" data-id="'+esc(id)+'"><i class="ti ti-printer"></i> Print PRF</button>'+
       (draft&&rows.length&&!unawarded?'<button class="primary" data-act="signPR" data-id="'+esc(id)+'">'+
         '<i class="ti ti-writing-sign"></i> Sign &amp; send to Manager</button>':'')+
     '</div>');
 }
-function signPR(id){closeModal();rpcPreview('adm_pr_sign',{p_pr_id:id},'Sign this request — review')}
 function consolidatePR(id){closeModal();rpcPreview('adm_pr_consolidate',{p_pr_id:id},'Merge duplicate items — review')}
 function addQuotation(id){
   askText('Add another job','Quotation number',true,function(ser){
@@ -1445,12 +1457,13 @@ async function viewApprovals(){
   h+='<div class="card">'+listBar('appr','Search request, order, job, client…')+'<div class="mini" data-lfn="appr"></div></div>';
   h+='<div data-lft="appr"><div class="card"><h3>Purchase requests</h3>'+
     (mineP.length?'<table><thead><tr><th>Request</th><th>Job</th><th>Raised by</th>'+
-      '<th class="num">Budget</th><th class="num">Chosen suppliers</th><th>Stage</th><th></th></tr></thead><tbody>'+
+      '<th>Charge to</th><th class="num">Budget</th><th class="num">Chosen suppliers</th><th>Stage</th><th></th></tr></thead><tbody>'+
       mineP.map(function(r){
         var own=((r.requested_by||'').toLowerCase()===ME.email)||((r.signed_by||'').toLowerCase()===ME.email);
         return '<tr'+rowAttrs([r.pr_no,r.quotation_serial,r.signed_by,r.requested_by],r.company)+'><td><b>'+esc(r.pr_no)+'</b></td>'+
           '<td>'+esc(r.quotation_serial||'combined')+qLabel(r.quotation_serial)+'</td>'+
           '<td class="mini">'+esc(r.signed_by||r.requested_by||'')+'</td>'+
+          '<td class="mini">'+esc(CHARGE_LABEL[r.charge_to]||'—')+(r.department?'<br>'+esc(r.department):'')+'</td>'+
           '<td class="num">'+money(r.est_total)+'</td>'+
           '<td class="num">'+(r.awarded_total!=null?money(r.awarded_total)+'<div class="mini">without VAT'+
             (Number(r.awarded_total)>Number(r.est_total)?' · <span style="color:#b91c1c">over budget</span>':'')+'</div>':'—')+'</td>'+
@@ -1467,10 +1480,185 @@ async function viewApprovals(){
   h+='</div>';
   VIEW(_vs).innerHTML=h;
 }
+
+
+/* ================= PASSCODE, SIGNATURE, PRF =================
+   Rommel, 2026-10-18: a purchase request goes requester -> Manager -> Head of Plant Operations, and
+   each enters their passcode so their signature goes on the PRF. The passcode is the person's Modcraft
+   PIN when they have one (checked by the database, never seen by this page), otherwise a KEYSTONE
+   passcode they set here. A wrong passcode is counted; 5 in 15 minutes locks it for a while. */
+var CHARGE_LABEL={project:'Project (quotation)',opex:'OPEX',capex:'CAPEX'};
+function askPass(title,sub,cb){
+  supa.rpc('adm_passcode_status').then(function(r){
+    var st=r&&r.data;
+    if(st==='none') return myPasscode(function(){askPass(title,sub,cb)});
+    openModal('<h3>'+esc(title)+'</h3>'+(sub?'<p class="sub">'+sub+'</p>':'')+
+      '<label>'+(st==='modcraft'?'Your Modcraft PIN':'Your KEYSTONE passcode')+'</label>'+
+      '<input id="pcIn" type="password" inputmode="numeric" autocomplete="off" maxlength="8" style="max-width:200px;letter-spacing:4px">'+
+      '<div class="mini" style="margin-top:4px">It puts your signature on the purchase request form.</div>'+
+      '<div class="row right" style="margin-top:14px"><button class="ghost" data-act="closeModal">Cancel</button><button class="primary" id="pcOk">Continue</button></div>');
+    setTimeout(function(){var t=el('pcIn');if(t)t.focus()},30);
+    var go_=function(){var v=el('pcIn').value.trim(); if(!v){toast('Enter your passcode.','err');return} closeModal(); cb(v);};
+    el('pcOk').onclick=go_; el('pcIn').onkeydown=function(e){if(e.key==='Enter')go_()};
+  });
+}
+async function myPasscode(after){
+  var r=await supa.rpc('adm_passcode_status'), st=r.data;
+  var sig=await mySigImage();
+  openModal('<h3>My passcode &amp; signature</h3>'+
+    (st==='modcraft'?'<div class="info">You use your <b>Modcraft PIN</b> here. To change it, change it in Modcraft (avatar menu › Set / Change PIN).</div>':
+      '<p class="sub">'+(st==='keystone'?'Change your KEYSTONE passcode.':'Set a passcode (4–8 digits). You enter it each time you sign or approve a purchase request.')+'</p>'+
+      '<div class="grid g2">'+(st==='keystone'?'<div><label>Current passcode</label><input id="mpC" type="password" inputmode="numeric" maxlength="8"></div>':'')+
+      '<div><label>New passcode</label><input id="mpN" type="password" inputmode="numeric" maxlength="8"></div>'+
+      '<div><label>Repeat new passcode</label><input id="mpR" type="password" inputmode="numeric" maxlength="8"></div></div>'+
+      '<div class="row right" style="margin-top:8px"><button class="primary" id="mpOk">Save passcode</button></div>')+
+    '<h4 style="margin:16px 0 6px">My signature</h4>'+
+    (sig?'<div style="background:#fff;border-radius:8px;padding:8px;display:inline-block"><img src="'+sig.src+'" style="max-height:60px"></div><div class="mini">'+(sig.from==='modcraft'?'From Modcraft. Change it in Modcraft.':'Uploaded in KEYSTONE.')+'</div>':
+      '<div class="warn">No signature on file — the PRF will show your name only.</div>')+
+    (!sig||sig.from==='keystone'?'<label>Upload a signature (PNG with a clear background is best)</label><input id="mpS" type="file" accept="image/*">'+
+      '<div class="row right" style="margin-top:8px"><button id="mpSOk">Save signature</button></div>':'')+
+    '<div class="row right" style="margin-top:14px"><button data-act="closeModal">Close</button></div>');
+  if(el('mpOk')) el('mpOk').onclick=async function(){
+    var n=el('mpN').value.trim(); if(n!==el('mpR').value.trim()){toast('The two new passcodes do not match.','err');return}
+    var x=await supa.rpc('adm_passcode_set',{p_new:n,p_current:el('mpC')?el('mpC').value.trim():null});
+    if(x.error){toast(errMsg(x.error),'err');return}
+    toast('Passcode saved.','ok'); closeModal(); if(after) after();
+  };
+  if(el('mpSOk')) el('mpSOk').onclick=async function(){
+    var f=el('mpS').files[0]; if(!f){toast('Choose an image.','err');return}
+    var url=await shrinkImage(f,600,180);
+    var x=await supa.from('adm_signatures').upsert({email:ME.email,image:url,updated_at:new Date().toISOString()});
+    if(x.error){toast(errMsg(x.error),'err');return}
+    toast('Signature saved.','ok'); myPasscode(after);
+  };
+}
+function shrinkImage(file,maxW,maxH){
+  return new Promise(function(ok,no){ var fr=new FileReader(); fr.onload=function(){ var im=new Image(); im.onload=function(){
+    var k=Math.min(1,maxW/im.width,maxH/im.height), c=document.createElement('canvas'); c.width=Math.round(im.width*k); c.height=Math.round(im.height*k);
+    c.getContext('2d').drawImage(im,0,0,c.width,c.height); ok(c.toDataURL('image/png')); }; im.onerror=no; im.src=fr.result; }; fr.onerror=no; fr.readAsDataURL(file); });
+}
+async function sigImages(emails){
+  emails=emails.filter(Boolean).map(function(e){return e.toLowerCase().trim()});
+  var out={}; if(!emails.length) return out;
+  var a=await supa.from('settings').select('key,value').in('key',emails.map(function(e){return 'SIG_'+e}));
+  (a.data||[]).forEach(function(r){var v=r.value; if(typeof v==='string'&&/^data:image/.test(v)) out[r.key.slice(4).toLowerCase()]={src:v,from:'modcraft'}});
+  var b=await supa.from('adm_signatures').select('email,image').in('email',emails);
+  (b.data||[]).forEach(function(r){ if(!out[r.email]) out[r.email]={src:r.image,from:'keystone'} });
+  return out;
+}
+async function mySigImage(){ var s=await sigImages([ME.email]); return s[ME.email]||null; }
+async function peopleNames(emails){
+  emails=emails.filter(Boolean); var out={}; if(!emails.length) return out;
+  var r=await supa.rpc('adm_people_names',{p_emails:emails});
+  (r.data||[]).forEach(function(x){ if(x.name) out[x.email]=x.name });
+  return out;
+}
+function signPR(id){
+  closeModal();
+  askPass('Sign this purchase request','Signing sends it to the Manager. The lines and chosen suppliers are locked.',function(pc){
+    rpcPreview('adm_pr_sign',{p_pr_id:id,p_passcode:pc},'Sign this request — review');
+  });
+}
 function apprPR(id,ok){
-  if(ok) return rpcPreview('adm_pr_approve',{p_pr_id:id,p_approve:true,p_reason:null},'Approve purchase request — review');
+  if(ok) return askPass('Approve purchase request','',function(pc){
+    rpcPreview('adm_pr_approve',{p_pr_id:id,p_passcode:pc,p_approve:true,p_reason:null},'Approve purchase request — review');});
   askText('Reject purchase request','Reason for rejection',true,function(reason){
-    rpcPreview('adm_pr_approve',{p_pr_id:id,p_approve:false,p_reason:reason},'Reject purchase request — review')},{danger:1,ok:'Continue to review'});
+    askPass('Reject purchase request','',function(pc){
+      rpcPreview('adm_pr_approve',{p_pr_id:id,p_passcode:pc,p_approve:false,p_reason:reason},'Reject purchase request — review');});
+  },{danger:1,ok:'Continue'});
+}
+function setCharge(id,cur,dept){
+  openModal('<h3>Charge this purchase to</h3>'+
+    '<div class="row" style="gap:18px;margin:8px 0">'+['project','opex','capex'].map(function(k){
+      return '<label style="display:flex;gap:6px;align-items:center;margin:0"><input type="radio" name="chg" value="'+k+'"'+(k===cur?' checked':'')+' style="width:auto"> '+CHARGE_LABEL[k]+'</label>'}).join('')+'</div>'+
+    '<div class="mini">Project = the cost of a client job (it counts in that quotation\'s profitability). OPEX = running costs. CAPEX = equipment and assets.</div>'+
+    '<label>Department (optional)</label><input id="chgD" value="'+esc(dept||'')+'" placeholder="e.g. Production, Admin, Logistics">'+
+    '<div class="row right" style="margin-top:14px"><button class="ghost" data-act="openPR" data-id="'+esc(id)+'">Cancel</button><button class="primary" id="chgOk">Save</button></div>');
+  el('chgOk').onclick=async function(){
+    var c=(document.querySelector('input[name=chg]:checked')||{}).value; if(!c){toast('Tick Project, OPEX or CAPEX.','err');return}
+    var r=await supa.rpc('adm_pr_set_charge',{p_pr_id:id,p_charge_to:c,p_department:el('chgD').value.trim()||null});
+    if(r.error){toast(errMsg(r.error),'err');return}
+    toast('Saved.','ok'); openPR(id); render();
+  };
+}
+var KS_COMPANIES=['World Class Laminate, Inc.','Module Systems and Services, Inc.','Cebu World Laminate, Inc.'];
+function newPR(){
+  var myCo=KS_COMPANIES.filter(function(c){return _coKey(c)===_coKey(ME.company)})[0]||KS_COMPANIES[0];
+  openModal('<h3>New purchase request</h3>'+
+    '<p class="sub">For things not pulled from a quotation — running costs (OPEX), equipment (CAPEX), or project items you type by hand.</p>'+
+    '<div class="grid g2"><div><label>Company</label><select id="nCo">'+KS_COMPANIES.map(function(c){return '<option value="'+esc(c)+'"'+(c===myCo?' selected':'')+'>'+esc(c.replace('Module Systems','Module System'))+'</option>'}).join('')+'</select></div>'+
+    '<div><label>Title</label><input id="nT" placeholder="e.g. Saw blades for panel saw"></div></div>'+
+    '<label>Charge to</label><div class="row" style="gap:18px;margin:4px 0">'+['opex','capex','project'].map(function(k){
+      return '<label style="display:flex;gap:6px;align-items:center;margin:0"><input type="radio" name="nChg" value="'+k+'" style="width:auto"> '+CHARGE_LABEL[k]+'</label>'}).join('')+'</div>'+
+    '<div class="grid g3"><div id="nQw" style="display:none"><label>Quotation no.</label><input id="nQ" placeholder="QT-W00000132"></div>'+
+      '<div><label>Department</label><input id="nD" placeholder="Production"></div><div><label>Needed by</label><input id="nN" type="date"></div></div>'+
+    '<label>Purpose</label><input id="nP">'+
+    '<table style="margin-top:10px"><thead><tr><th>Item</th><th>Unit</th><th class="num">Qty</th><th class="num">Est. price</th><th>Note</th></tr></thead><tbody id="nLines"></tbody></table>'+
+    '<button class="ghost" id="nAdd" style="margin-top:6px"><i class="ti ti-plus"></i> Add a line</button>'+
+    '<div class="row right" style="margin-top:14px"><button class="ghost" data-act="closeModal">Cancel</button><button class="primary" id="nOk">Continue</button></div>');
+  el('modalBox').style.cssText='max-width:950px;width:96vw';
+  var add=function(){ var tr=document.createElement('tr'); tr.innerHTML='<td><input class="nI"></td><td><input class="nU" style="max-width:80px" placeholder="pc"></td>'+
+    '<td class="num"><input class="nQy" type="number" step="any" style="max-width:90px"></td><td class="num"><input class="nPr" type="number" step="any" style="max-width:110px"></td><td><input class="nNo"></td>';
+    el('nLines').appendChild(tr); };
+  add(); add(); add();
+  el('nAdd').onclick=add;
+  Array.prototype.forEach.call(document.querySelectorAll('input[name=nChg]'),function(r){r.onchange=function(){el('nQw').style.display=this.value==='project'?'':'none'}});
+  el('nOk').onclick=function(){
+    var c=(document.querySelector('input[name=nChg]:checked')||{}).value; if(!c){toast('Tick OPEX, CAPEX or Project.','err');return}
+    var lines=[].slice.call(document.querySelectorAll('#nLines tr')).map(function(tr){return {item:tr.querySelector('.nI').value.trim(),unit:tr.querySelector('.nU').value.trim(),
+      qty:parseFloat(tr.querySelector('.nQy').value)||0,est_price:tr.querySelector('.nPr').value===''?null:parseFloat(tr.querySelector('.nPr').value),notes:tr.querySelector('.nNo').value.trim()}})
+      .filter(function(l){return l.item&&l.qty>0});
+    if(!lines.length){toast('Add at least one item with a quantity.','err');return}
+    var args={p_company:el('nCo').value,p_title:el('nT').value.trim(),p_purpose:el('nP').value.trim()||null,p_charge_to:c,p_needed_by:el('nN').value||null,
+      p_quotation_serial:c==='project'?el('nQ').value.trim():null,p_department:el('nD').value.trim()||null,p_lines:lines};
+    closeModal(); rpcPreview('adm_pr_create',args,'New purchase request — review');
+  };
+}
+async function printPRF(id){
+  var r=await Promise.all([supa.from('adm_purchase_requests').select('*').eq('id',id).maybeSingle(),
+    supa.from('adm_pr_lines').select('*').eq('pr_id',id).order('line_no')]);
+  var p=r[0].data; if(!p){toast('Could not load the request.','err');return}
+  var lines=r[1].data||[];
+  var sids=lines.map(function(l){return l.chosen_supplier_id}).filter(Boolean), S={}, OF={};
+  if(sids.length){ var s=await supa.from('adm_suppliers').select('id,name').in('id',sids); (s.data||[]).forEach(function(x){S[x.id]=x.name}); }
+  var oids=lines.map(function(l){return l.awarded_offer_id}).filter(Boolean);
+  if(oids.length){ var o=await supa.from('adm_v_rfq_offers').select('id,unit_price,quote_id').in('id',oids); (o.data||[]).forEach(function(x){OF[x.id]=x}); }
+  var who=[p.signed_by||p.requested_by,p.manager_approved_by,p.hpo_approved_by];
+  var sig=await sigImages(who), nm=await peopleNames(who);
+  var e=function(x){return String(x==null?'':x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})};
+  var m=function(n){return n==null||n===''?'':'₱'+Number(n).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})};
+  var d=function(t){return t?new Date(t).toLocaleDateString('en-PH',{year:'numeric',month:'short',day:'numeric'}):''};
+  var tick=function(k){return (p.charge_to===k?'☑':'☐')+' '+CHARGE_LABEL[k]};
+  var block=function(label,email,at){ var k=String(email||'').toLowerCase().trim(), s=sig[k];
+    return '<td style="width:33%;vertical-align:bottom;text-align:center;padding:8px">'+
+      '<div style="height:64px;display:flex;align-items:flex-end;justify-content:center">'+(s?'<img src="'+s.src+'" style="max-height:60px;max-width:180px">':'')+'</div>'+
+      '<div style="border-top:1px solid #000;padding-top:4px;font-weight:bold">'+e(email?(nm[k]||email):'')+'</div>'+
+      '<div style="font-size:11px">'+e(label)+(at?' · '+e(d(at)):'')+'</div></td>'};
+  var tot=0, totB=0;
+  var html='<html><head><title>'+e(p.pr_no)+' — Purchase Request Form</title><style>body{font:12px Arial,sans-serif;color:#000;background:#fff;margin:24px}'+
+    'h1{font-size:17px;margin:0}table{border-collapse:collapse;width:100%}.g td,.g th{border:1px solid #888;padding:4px 6px;text-align:left}.n{text-align:right}'+
+    '.hd td{padding:2px 8px 2px 0}.m{color:#333}</style></head><body>'+
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start"><div><h1>PURCHASE REQUEST FORM</h1><div class="m">'+e(String(p.company||'').replace('Module Systems','Module System'))+'</div></div>'+
+    '<div style="text-align:right"><div style="font-size:15px;font-weight:bold">'+e(p.pr_no)+'</div><div class="m">'+e(d(p.created_at))+'</div></div></div>'+
+    '<table class="hd" style="margin:12px 0"><tr><td><b>Charge to:</b></td><td>'+tick('project')+' &nbsp; '+tick('opex')+' &nbsp; '+tick('capex')+'</td></tr>'+
+    (p.quotation_serial?'<tr><td><b>Quotation:</b></td><td>'+e(p.quotation_serial)+'</td></tr>':'')+
+    (p.department?'<tr><td><b>Department:</b></td><td>'+e(p.department)+'</td></tr>':'')+
+    '<tr><td><b>Title:</b></td><td>'+e(p.title||'')+'</td></tr>'+(p.purpose?'<tr><td><b>Purpose:</b></td><td>'+e(p.purpose)+'</td></tr>':'')+
+    (p.needed_by?'<tr><td><b>Needed by:</b></td><td>'+e(d(p.needed_by))+'</td></tr>':'')+'</table>'+
+    '<table class="g"><tr><th>#</th><th>Item</th><th class="n">Qty</th><th>Unit</th><th class="n">Budget</th><th>Supplier</th><th class="n">Unit price</th><th class="n">Amount</th></tr>'+
+    lines.map(function(l){var o=OF[l.awarded_offer_id]||{}, a=(Number(o.unit_price)||0)*(Number(l.qty)||0); tot+=a; totB+=Number(l.est_amount)||0;
+      return '<tr><td>'+e(l.line_no)+'</td><td>'+e(l.item_name)+(l.award_reason?'<div class="m" style="font-size:10px">Reason for supplier: '+e(l.award_reason)+'</div>':'')+'</td>'+
+        '<td class="n">'+e(l.qty)+'</td><td>'+e(l.unit||'')+'</td><td class="n">'+m(l.est_price)+'</td><td>'+e(S[l.chosen_supplier_id]||'')+'</td>'+
+        '<td class="n">'+m(o.unit_price)+'</td><td class="n">'+(o.unit_price!=null?m(a):'')+'</td></tr>'}).join('')+
+    '<tr><td colspan="4" class="n"><b>Totals</b></td><td class="n"><b>'+m(totB)+'</b></td><td></td><td></td><td class="n"><b>'+m(tot)+'</b></td></tr></table>'+
+    '<div class="m" style="font-size:10px;margin-top:4px">Unit prices are as quoted by the supplier.</div>'+
+    '<table style="margin-top:28px"><tr>'+block('Requested by',p.signed_by||p.requested_by,p.signed_at)+
+      block('Approved by — Manager',p.manager_approved_by,p.manager_approved_at)+block('Approved by — Head of Plant Operations',p.hpo_approved_by,p.hpo_approved_at)+'</tr></table>'+
+    (p.status==='rejected'?'<p style="color:#b91c1c;font-weight:bold">REJECTED: '+e(p.reject_reason||'')+'</p>':'')+
+    (['approved','ordered','closed'].indexOf(p.status)<0?'<p style="color:#b45309;font-weight:bold;margin-top:12px">NOT YET APPROVED — not for purchase.</p>':'')+
+    '<p class="m" style="font-size:10px">Printed from KEYSTONE '+e(new Date().toLocaleString())+'</p></body></html>';
+  var w=window.open('','_blank'); if(!w){toast('Allow pop-ups to print.','err');return}
+  w.document.write(html); w.document.close(); setTimeout(function(){w.focus();w.print()},400);
 }
 
 /* ================= READY FOR ODOO =================
@@ -1508,7 +1696,9 @@ async function viewPO(){
     h+='<div class="card"'+rowAttrs([p.pr_no,p.quotation_serial].concat(Object.keys(groups).map(function(k){return (S[k]||{}).name})),p.company)+'>'+
       '<div class="row" style="flex-wrap:wrap;gap:6px"><h3 style="margin:0">'+esc(p.pr_no)+'</h3>'+pill(p.status)+
         '<span class="mini">'+esc(p.quotation_serial||'combined')+'</span>'+qLabel(p.quotation_serial)+
-        '<div style="flex:1"></div><button class="ghost" data-act="printOdoo" data-id="'+esc(p.id)+'"><i class="ti ti-printer"></i> Print for Odoo</button></div>';
+        '<span class="pill p-grey">'+esc(CHARGE_LABEL[p.charge_to]||'—')+'</span>'+
+        '<div style="flex:1"></div><button class="ghost" data-act="printPRF" data-id="'+esc(p.id)+'"><i class="ti ti-file-text"></i> PRF</button>'+
+        '<button class="ghost" data-act="printOdoo" data-id="'+esc(p.id)+'"><i class="ti ti-printer"></i> Print for Odoo</button></div>';
     Object.keys(groups).forEach(function(k){
       var s=S[k]||{}, q=Q.filter(function(x){return x.pr_id===p.id&&x.supplier_id===k})[0]||{}, po=O.filter(function(x){return x.pr_id===p.id&&x.supplier_id===k})[0];
       var tot=groups[k].reduce(function(a,l){var o=OF[l.awarded_offer_id]||{};return a+(Number(o.unit_price)||0)*(Number(l.qty)||0)},0);
