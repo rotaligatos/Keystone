@@ -315,6 +315,7 @@ var ACTIONS={
   vouch:function(d){vouch(d.gate)},
   buildMR:function(d){buildMR(d.gate)},
   release:function(d){release(d.gate)},
+  qfTab:function(d){qfTab(d.tab)},
   canvItems:function(d){canvItems(d.serial)},
   setReleasePeople:function(d){setReleasePeople(d.people)},
   prLines:function(d){prLines(d.id)},
@@ -767,6 +768,12 @@ function drawQueuePage(list,_vs){
       kpi('Released to production',fq.filter(function(r){return r.gate_status==='released'}).length,'JO active in PMES')+
     '</div></div>';
 
+  var canv=CANV_ROWS||[];
+  var tb=function(k,t,n){ var on=QF.tab===k; return '<button class="'+(on?'on':'')+'" data-act="qfTab" data-tab="'+k+'" style="border:none;background:none;cursor:pointer;padding:9px 16px;font-size:14px;'+
+    'font-weight:'+(on?'700':'500')+';color:'+(on?'inherit':'var(--muted,#9aa3ad)')+';border-bottom:2px solid '+(on?'var(--accent,#5b8def)':'transparent')+'">'+t+' <span class="tabcount">'+n+'</span></button>'; };
+  h+='<div class="row" style="gap:2px;border-bottom:1px solid var(--line,#2a2f36);margin:4px 0 12px">'+
+       tb('approved','Client approved',rows.length)+tb('waiting','Waiting for client approval',canv.length)+'</div>';
+  if(QF.tab==='approved'){
   h+='<div class="card"><h3>Final Quotation approved</h3>'+
      '<p class="sub">These are live jobs. Payment status here is what PMES reads back.</p>'+
      '<div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:10px">'+
@@ -777,23 +784,28 @@ function drawQueuePage(list,_vs){
          '<option value="pending_payment">Awaiting payment</option><option value="cleared">Cleared to release</option>'+
          '<option value="released">Released</option></select>'+
      '</div><div id="qfList"></div></div>';
+  }
 
-  var canv=CANV_ROWS||[];
-  h+='<div class="card"><h3>Advance canvassing — outsource items</h3>'+
-     '<p class="sub">Quotations the client has <b>not</b> final-approved yet. View their outsource items to ask suppliers early. '+
-     'No payment, gate or purchase request can be made here — those start once the client approves the Final Quotation.</p>'+
+  if(QF.tab==='waiting'){
+  h+='<div class="card"><h3>Waiting for client approval</h3>'+
+     '<p class="sub">Final Quotations locked and sent, not yet approved by the client. View only: see each one\'s outsource items to canvass suppliers early. '+
+     'No payment, gate or purchase request until the client approves. Quotations still at the Initial Quotation stage do not appear in KEYSTONE.</p>'+
      (canv.length?canv.map(function(r){return '<div class="gate" style="margin-bottom:8px">'+
         '<div class="row" style="flex-wrap:wrap;gap:6px"><b>'+esc(r.serial)+'</b>'+
         (isTestSerial(r.serial)?'<span class="pill" style="background:#dc2626;color:#fff">TEST</span>':'')+
         '<span>'+esc(r.client_name||'—')+(r.project_name?' — '+esc(r.project_name):'')+'</span>'+
-        '<span class="mini">'+esc(r.company||'')+(r.prepared_by?' · '+esc(r.prepared_by):'')+' · '+r.lines+' outsource item'+(+r.lines===1?'':'s')+' · est. '+money(r.est_total)+'</span>'+
+        '<span class="mini">'+esc(r.company||'')+(r.prepared_by?' · '+esc(r.prepared_by):'')+' · '+(+r.lines?r.lines+' outsource item'+(+r.lines===1?'':'s')+' · est. '+money(r.est_total):'no outsource items')+'</span>'+
+        '<b style="margin-left:6px">'+money(r.total)+'</b>'+
         '<div class="spacer" style="flex:1"></div>'+
-        '<button class="ghost" data-act="canvItems" data-serial="'+esc(r.serial)+'" style="padding:3px 10px;font-size:12px"><i class="ti ti-list-search"></i> Outsource items</button></div>'+
+        (+r.lines?'<button class="ghost" data-act="canvItems" data-serial="'+esc(r.serial)+'" style="padding:3px 10px;font-size:12px"><i class="ti ti-list-search"></i> Outsource items</button>':'')+
+        '<button class="ghost" data-act="viewQuote" data-serial="'+esc(r.serial)+'" style="padding:3px 10px;font-size:12px"><i class="ti ti-file-text"></i> View quotation</button></div>'+
         '<div id="canv-'+esc(r.serial)+'"></div></div>'}).join('')
-      :'<div class="empty">No quotation waiting for final approval has outsource items.</div>')+'</div>';
+      :'<div class="empty">No Final Quotation is waiting for the client.</div>')+'</div>';
+  }
 
 
   VIEW(_vs).innerHTML=h;
+  if(QF.tab!=='approved') return;
   el('qfCo').value=QF.co; el('qfSt').value=QF.st;
   el('qfSearch').oninput=function(){QF.q=this.value;drawQueueList()};
   el('qfCo').onchange=function(){QF.co=this.value;drawQueueList()};
@@ -802,7 +814,8 @@ function drawQueuePage(list,_vs){
 }
 
 /* Release Queue search + filters. Kept across re-renders so an action never loses the person's place. */
-var QROWS=[], QF={q:'',co:'',st:''};
+var QROWS=[], QF={q:'',co:'',st:'',tab:'approved'};
+function qfTab(t){ QF.tab=t; drawQueuePage(QROWS); }
 function _coKey(s){s=String(s||'').toLowerCase();
   return s.indexOf('module')>=0?'M':s.indexOf('cebu')>=0?'C':s.indexOf('world class')>=0?'W':''}
 function drawQueueList(){
