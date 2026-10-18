@@ -2168,43 +2168,77 @@ function loadXLSX(){ return window.XLSX?Promise.resolve():new Promise(function(o
   s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=ok; s.onerror=function(){no(new Error('Could not load the Excel reader.'))}; document.head.appendChild(s); }); }
 function importSuppliers(){
   openModal('<h3>Import suppliers from Odoo</h3>'+
-    '<p class="sub">In Odoo: <b>Purchase → Orders → Vendors</b>, select all, <b>Action → Export</b>, tick the fields you want '+
-    '(Name, Phone, Email, Tax ID, Street, City, Website, Vendor Payment Terms), and save as Excel. Then choose the file here.</p>'+
-    '<input id="iF" type="file" accept=".xlsx,.xls,.csv">'+
+    '<p class="sub">Either export works:</p>'+
+    '<ul class="sub" style="margin:0 0 8px 18px;padding:0"><li><b>Vendor list</b> — Purchase › Vendors, select all, Action › Export (Name, Phone, Email, Tax ID, Street, City, Website, Vendor Payment Terms).</li>'+
+    '<li><b>Purchase order lines</b> — the suppliers are taken from the Partner column, and each supplier\'s items keep the <b>latest price you paid</b> (used as price history in the canvass).</li></ul>'+
+    '<input id="iF" type="file" accept=".xlsx,.xls,.csv"><div id="iMsg" class="mini" style="margin-top:6px"></div>'+
     '<div class="row right" style="margin-top:14px"><button class="ghost" data-act="closeModal">Cancel</button><button class="primary" id="iOk">Read file</button></div>');
   el('iOk').onclick=async function(){
     var f=el('iF').files[0]; if(!f){toast('Choose the exported file.','err');return}
     this.disabled=true;
     try{
       await loadXLSX();
-      var wb=XLSX.read(await f.arrayBuffer(),{type:'array'}), ws=wb.Sheets[wb.SheetNames[0]];
-      var aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
-      var rows=supParseOdoo(aoa);
-      if(!rows.length){toast('No vendor names found. Make sure the export includes the Name column.','err');this.disabled=false;return}
+      var wb=XLSX.read(await f.arrayBuffer(),{type:'array',cellDates:true}), ws=wb.Sheets[wb.SheetNames[0]];
+      var aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
+      var res=supParseOdoo(aoa);
+      if(res.error){ el('iMsg').innerHTML='<span style="color:#b91c1c">'+esc(res.error)+'</span>'; this.disabled=false; return; }
       closeModal();
-      rpcPreview('adm_supplier_import',{p_rows:rows},'Import '+rows.length+' supplier row(s) from Odoo — review');
+      var note=res.mode==='lines'?'Read as purchase order lines: '+res.rows.length+' supplier(s) from '+res.lineCount+' line(s)'+
+        (res.internal.length?' — left out our own companies: '+res.internal.join(', '):''):'Read as a vendor list: '+res.rows.length+' supplier(s).';
+      toast(note,'ok');
+      rpcPreview('adm_supplier_import',{p_rows:res.rows},'Import suppliers — review');
     }catch(e){toast(errMsg(e),'err');this.disabled=false;}
   };
 }
+/* Reads an Odoo export. Headers like "Order Lines/Partner" are matched on their last part. Two shapes:
+   - purchase order lines (has a Partner/Vendor column): suppliers = the partners; their items keep the latest price;
+   - vendor list (has a Name column).
+   A file with neither is refused — never guess a column (the first version read dates as supplier names). */
+var KS_OWN_COMPANY_RE=/world\s*class\s*laminate|module\s*system|cebu\s*world\s*laminate/i;
 function supParseOdoo(aoa){
-  if(!aoa||!aoa.length) return [];
-  var H=aoa[0].map(function(h){return String(h||'').toLowerCase().trim()});
+  if(!aoa||aoa.length<2) return {error:'The file is empty.'};
+  var H=aoa[0].map(function(h){var x=String(h||'').toLowerCase().trim(); return x.split('/').pop().trim();});
   function col(re,not){ for(var i=0;i<H.length;i++){ if(re.test(H[i])&&!(not&&not.test(H[i]))) return i; } return -1; }
-  var c={ref:col(/^(external )?id$|external id/),name:col(/^(display )?name$|company name|^vendor$/,/contact|salesperson|payment/),
-    phone:col(/^phone/),mobile:col(/mobile/),email:col(/e-?mail/),tin:col(/tax id|^vat$|^tin/),street:col(/^street$|street/),
+  function txt(v){ return v==null?'':String(v).trim(); }
+  function iso(v){ if(v instanceof Date&&!isNaN(v)) return v.toISOString();
+    var s=txt(v); if(!s) return ''; var m=s.match(/^(\d{4}-\d\d-\d\d)[ T](\d\d:\d\d(:\d\d)?)/); return m?m[1]+'T'+m[2]+'+08:00':(/^\d{4}-\d\d-\d\d$/.test(s)?s:''); }
+  var part=col(/^(partner|vendor|supplier)$/);
+  if(part>=0){
+    var cP=col(/^product$/), cD=col(/^description$/), cU=col(/unit of measure|^uom$|^unit$/), cPr=col(/^unit price$|^price$/),
+        cQ=col(/^quantity$|^qty$/), cDt=col(/created on|order date|^date/), cRef=col(/order reference|^reference$/);
+    if(cPr<0) return {error:'This looks like purchase order lines, but there is no Unit Price column.'};
+    var by={}, order=[], internal={}, lines=0;
+    aoa.slice(1).forEach(function(r){
+      var sup=txt(r[part]); if(!sup) return;
+      if(KS_OWN_COMPANY_RE.test(sup)){ internal[sup]=1; return; }
+      var item=txt(cP>=0?r[cP]:'')||txt(cD>=0?r[cD]:''), price=parseFloat(r[cPr]), qty=cQ>=0?parseFloat(r[cQ]):1;
+      if(!by[sup]){ by[sup]={name:sup,products:{}}; order.push(sup); }
+      if(!item||!(qty>0)||/amount adjustment/i.test(item)) return;
+      if(!(price>0)) price=null;   // some exports carry 0 for the price; keep the item, record no price
+      lines++;
+      var unit=txt(cU>=0?r[cU]:''), dt=iso(cDt>=0?r[cDt]:''), k=item.toLowerCase()+'|'+unit.toLowerCase(), cur=by[sup].products[k];
+      if(!cur||(price!=null&&(cur.price==null||(dt&&(!cur.date||dt>cur.date))))) by[sup].products[k]={item:item,unit:unit,price:price,date:dt,note:cRef>=0&&txt(r[cRef])?'Last bought on '+txt(r[cRef]).split(' ')[0]:''};
+    });
+    var rows=order.map(function(n){var s=by[n]; return {name:s.name,products:Object.keys(s.products).map(function(k){return s.products[k]})}});
+    if(!rows.length) return {error:'No suppliers found in the Partner column (our own companies are left out).'};
+    return {mode:'lines',rows:rows,lineCount:lines,internal:Object.keys(internal)};
+  }
+  var c={ref:col(/^(external )?id$/),name:col(/^(display name|name|company name|vendor name)$/),
+    phone:col(/^phone/),mobile:col(/mobile/),email:col(/e-?mail/),tin:col(/tax id|^vat$|^tin$/),street:col(/^street$/),
     street2:col(/street2|street 2/),city:col(/^city/),country:col(/^country/),web:col(/website/),
     terms:col(/payment term/),contact:col(/contact person|^contact$/),tags:col(/tags|categor/)};
-  if(c.name<0) c.name=0;
+  if(c.name<0) return {error:'No supplier column found. Use a vendor list with a Name column, or purchase order lines with a Partner column.'};
   var out=[];
   aoa.slice(1).forEach(function(r){
-    var g=function(k){return c[k]>=0?String(r[c[k]]||'').trim():''};
-    var nm=g('name'); if(!nm) return;
+    var g=function(k){return c[k]>=0?txt(r[c[k]]):''};
+    var nm=g('name'); if(!nm||KS_OWN_COMPANY_RE.test(nm)) return;
     out.push({name:nm,odoo_ref:g('ref'),contact_phone:g('phone')||g('mobile'),contact_email:g('email'),tin:g('tin'),
       address:[g('street'),g('street2')].filter(Boolean).join(', '),city:g('city'),country:g('country'),website:g('web'),
       payment_terms:g('terms'),contact_person:g('contact'),
       categories:g('tags')?g('tags').split(/[,;]/).map(function(x){return x.trim()}).filter(Boolean):[]});
   });
-  return out;
+  if(!out.length) return {error:'No supplier names found in the Name column.'};
+  return {mode:'vendors',rows:out};
 }
 /* Find suppliers on the web. Results are candidates only — adding one makes a prospect, never accredited. */
 function findSuppliers(){
@@ -2247,10 +2281,10 @@ async function supProducts(id,name){
   var rows=q.data||[];
   openModal('<h3>'+esc(name)+' — product list</h3>'+
     (rows.length?'<table><thead><tr><th>Item</th><th>Brand</th><th>Unit</th>'+
-      '<th class="num">Price</th><th class="num">Lead</th><th>Captured</th></tr></thead><tbody>'+
+      '<th class="num">Last price</th><th class="num">Lead</th><th>Last bought</th></tr></thead><tbody>'+
       rows.map(function(p){return '<tr><td>'+esc(p.item_name)+'<div class="mini">'+esc(p.spec||'')+'</div></td>'+
         '<td class="mini">'+esc(p.brand||'—')+'</td><td>'+esc(p.unit||'')+'</td>'+
-        '<td class="num">'+money(p.price)+'</td>'+
+        '<td class="num">'+(p.price!=null?money(p.price):'—')+'</td>'+
         '<td class="num">'+(p.lead_time_days!=null?p.lead_time_days+'d':'—')+'</td>'+
         '<td class="mini">'+dt(p.captured_at)+'</td></tr>'}).join('')+'</tbody></table>'
      :'<div class="empty">No products recorded for this supplier yet.</div>')+
