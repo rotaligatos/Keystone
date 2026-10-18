@@ -944,6 +944,19 @@ function _qvLabel(name){
   var f=name.split('/').pop(), m=f.match(/^(\S+) - .* - (.+)\.html$/);
   return m?m[2]+' — '+m[1]:f;
 }
+// Every quotation opened in KEYSTONE is marked as an admin reference copy — on screen and on every
+// printed page — so it can never be passed on as the client's quotation (Rommel, 2026-10-18).
+function _adminCopyMark(html,serial){
+  var stamp='<style>@media print{.kq-mark{position:fixed}}</style>'+
+    '<div class="kq-mark" style="position:fixed;left:0;right:0;top:42%;text-align:center;transform:rotate(-24deg);font:800 64px Arial,sans-serif;'+
+      'color:rgba(185,28,28,.14);pointer-events:none;z-index:9999;white-space:nowrap">ADMIN COPY ONLY · REFERENCE ONLY</div>'+
+    '<div style="border:2px solid #b91c1c;background:#fef2f2;color:#b91c1c;font:700 12px Arial,sans-serif;padding:6px 10px;margin:0 0 10px;text-align:center;letter-spacing:.04em">'+
+      'ADMIN COPY ONLY — REFERENCE ONLY · '+String(serial||'').replace(/[<>&]/g,'')+' · not for the client · printed from KEYSTONE</div>';
+  var i=String(html).search(/<body[^>]*>/i);
+  if(i<0) return stamp+html;
+  var j=html.indexOf('>',i)+1;
+  return html.slice(0,j)+stamp+html.slice(j);
+}
 async function viewQuote(serial){
   var folder=String(serial||'').replace(/[^A-Za-z0-9 ._\-\/]/g,'-');
   var box=el('modalBox');
@@ -953,7 +966,7 @@ async function viewQuote(serial){
   if(l.error){box.innerHTML='<h3>Quotation '+esc(serial)+'</h3><div class="warn">'+esc(errMsg(l.error))+'</div>';return}
   var files=(l.data||[]).filter(function(f){return /\.html$/i.test(f.name)&&!/ - BOM\.html$/i.test(f.name)});
   if(!files.length){box.innerHTML='<h3>Quotation '+esc(serial)+'</h3>'+
-    '<div class="empty">No saved printout for this quotation yet. Modcraft saves one each time it is locked or sent.</div>'+
+    '<div class="empty">No saved Final Quotation for this quotation yet. Opening it in Modcraft on the Final Quotation tab saves one automatically.</div>'+
     '<div class="row right" style="margin-top:12px"><button class="ghost" data-act="closeModal">Close</button></div>';return}
   var rank=function(n){return /Final Quotation\.html$/i.test(n)?0:/Final Draft\.html$/i.test(n)?1:/Draft\.html$/i.test(n)?2:3};
   files.sort(function(a,b){return rank(a.name)-rank(b.name)||String(b.updated_at).localeCompare(String(a.updated_at))});
@@ -963,12 +976,12 @@ async function viewQuote(serial){
       return '<option value="'+i+'">'+esc(_qvLabel(f.name))+' · saved '+esc(dt(f.updated_at||f.created_at))+'</option>'}).join('')+'</select>'+
     '<button data-act="printQuote"><i class="ti ti-printer"></i> Print / Save PDF</button>'+
     '<button class="ghost" data-act="closeModal">Close</button></div>'+
-    '<p class="sub" style="margin:6px 0">For reference — the copy Modcraft saved when it was locked or sent. Read-only.</p>'+
+    '<p class="sub" style="margin:6px 0">Admin copy, reference only — the copy Modcraft saved when it was locked or sent. Read-only; it prints marked “ADMIN COPY ONLY — REFERENCE ONLY”.</p>'+
     '<iframe id="qvFrame" sandbox="allow-same-origin allow-modals" style="width:100%;height:72vh;border:1px solid var(--line);border-radius:8px;background:#fff"></iframe>';
   async function show(i){
     var d=await supa.storage.from('quotations').download(folder+'/'+files[i].name);
     if(d.error||!d.data){el('qvFrame').srcdoc='<p style="font-family:sans-serif">Could not open this file: '+esc(errMsg(d.error||'missing'))+'</p>';return}
-    el('qvFrame').srcdoc=await d.data.text();
+    el('qvFrame').srcdoc=_adminCopyMark(await d.data.text(),serial);
   }
   el('qvPick').onchange=function(){show(+this.value)};
   show(0);
