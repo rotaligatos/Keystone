@@ -771,11 +771,13 @@ function drawQueuePage(list,_vs){
   var canv=CANV_ROWS||[];
   var tb=function(k,t,n){ var on=QF.tab===k; return '<button class="'+(on?'on':'')+'" data-act="qfTab" data-tab="'+k+'" style="border:none;background:none;cursor:pointer;padding:9px 16px;font-size:14px;'+
     'font-weight:'+(on?'700':'500')+';color:'+(on?'inherit':'var(--muted,#9aa3ad)')+';border-bottom:2px solid '+(on?'var(--accent,#5b8def)':'transparent')+'">'+t+' <span class="tabcount">'+n+'</span></button>'; };
-  h+='<div class="row" style="gap:2px;border-bottom:1px solid var(--line,#2a2f36);margin:4px 0 12px">'+
-       tb('approved','Client approved',rows.length)+tb('waiting','Waiting for client approval',canv.length)+'</div>';
-  if(QF.tab==='approved'){
-  h+='<div class="card"><h3>Final Quotation approved</h3>'+
-     '<p class="sub">These are live jobs. Payment status here is what PMES reads back.</p>'+
+  h+='<div class="row" style="gap:2px;border-bottom:1px solid var(--line,#2a2f36);margin:4px 0 12px;flex-wrap:wrap">'+
+       QF_TABS.map(function(t){ return tb(t[0],t[1],t[0]==='waiting'?canv.length:fq.filter(function(r){return qfTabOf(r)===t[0]}).length); }).join('')+'</div>';
+  if(QF.tab!=='waiting'){
+  h+='<div class="card"><h3>'+esc((QF_TABS.filter(function(t){return t[0]===QF.tab})[0]||['',''])[1])+'</h3>'+
+     '<p class="sub">'+({approved:'Client approved the Final Quotation, not yet released to production. Open the payment gate, record payments, then unlock.',
+       paid:'Released to production and fully paid.',balance:'Released to production with a balance still owed — follow up the payment.',
+       vouched:'Released to production on someone\'s vouch, before the payment terms were met.'}[QF.tab]||'')+'</p>'+
      '<div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:10px">'+
        '<input id="qfSearch" placeholder="Search quotation, client, project, prepared by, agent…" style="flex:1;min-width:240px" value="'+esc(QF.q)+'">'+
        '<select id="qfCo" style="width:210px;flex:0 0 210px"><option value="">All companies</option><option value="W">World Class Laminate</option>'+
@@ -805,7 +807,7 @@ function drawQueuePage(list,_vs){
 
 
   VIEW(_vs).innerHTML=h;
-  if(QF.tab!=='approved') return;
+  if(QF.tab==='waiting') return;
   el('qfCo').value=QF.co; el('qfSt').value=QF.st;
   el('qfSearch').oninput=function(){QF.q=this.value;drawQueueList()};
   el('qfCo').onchange=function(){QF.co=this.value;drawQueueList()};
@@ -816,6 +818,15 @@ function drawQueuePage(list,_vs){
 /* Release Queue search + filters. Kept across re-renders so an action never loses the person's place. */
 var QROWS=[], QF={q:'',co:'',st:'',tab:'approved'};
 function qfTab(t){ QF.tab=t; drawQueuePage(QROWS); }
+// Released jobs split by how they were released (Rommel, 2026-10-18): on a vouch, fully paid, or with
+// a balance still owed. Everything client-approved and not yet released is "approved".
+function qfTabOf(r){
+  if(r.gate_status!=='released') return 'approved';
+  if(r.vouched_by) return 'vouched';
+  return (+r.balance||0)>0.005?'balance':'paid';
+}
+var QF_TABS=[['waiting','Waiting for client approval'],['approved','Approved — not released'],
+  ['paid','Released — fully paid'],['balance','Released — with balance'],['vouched','Released — vouched']];
 function _coKey(s){s=String(s||'').toLowerCase();
   return s.indexOf('module')>=0?'M':s.indexOf('cebu')>=0?'C':s.indexOf('world class')>=0?'W':''}
 function drawQueueList(){
@@ -823,6 +834,7 @@ function drawQueueList(){
   var words=QF.q.toLowerCase().split(/\s+/).filter(Boolean);
   var list=QROWS.filter(function(r){
     if(!r.fq_client_approved) return false;
+    if(qfTabOf(r)!==QF.tab) return false;
     if(QF.co&&_coKey(r.company)!==QF.co) return false;
     if(QF.st){
       var st=r.gate_id?r.gate_status:'nogate';
@@ -833,7 +845,7 @@ function drawQueueList(){
     return words.every(function(w){return hay.indexOf(w)>=0});
   });
   box.innerHTML=(list.length?list.map(gateCard).join(''):
-    '<div class="empty">'+(QROWS.some(function(r){return r.fq_client_approved})?'Nothing matches the search.':'Nothing final-approved yet.')+'</div>')+
+    '<div class="empty">'+(QROWS.some(function(r){return r.fq_client_approved&&qfTabOf(r)===QF.tab})?'Nothing matches the search.':'Nothing here yet.')+'</div>')+
     '<div class="mini" style="margin-top:6px">'+list.length+' shown</div>';
 }
 
