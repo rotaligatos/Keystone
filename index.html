@@ -705,13 +705,13 @@ async function viewQueue(){
   // unapproved ones afterwards, so with more than 300 quotations an approved job with a small total
   // could silently fall off the list.
   var q=await supa.from('adm_v_release_queue').select('*')
-    .or('fq_client_approved.eq.true,iq_client_approved.eq.true')
+    .eq('fq_client_approved',true)
     .order('total',{ascending:false}).limit(2000);
   if(q.error){
     if(QCACHE){ toast('Could not refresh MSSI Payment Transaction: '+errMsg(q.error)); return; }
     VIEW(_vs).innerHTML='<div class="card"><div class="warn">'+esc(errMsg(q.error))+'</div></div>'; return;
   }
-  var fresh=(q.data||[]).filter(function(r){return r.fq_client_approved||r.iq_client_approved});
+  var fresh=(q.data||[]).filter(function(r){return r.fq_client_approved});
   KS_TEST_N=fresh.filter(function(r){return isTestSerial(r.serial)}).length;
   if(!(KS_SHOW_TEST&&ksCanSeeTest())) fresh=fresh.filter(function(r){return !isTestSerial(r.serial)});
   var sig=JSON.stringify(fresh);
@@ -732,10 +732,9 @@ function drawQueuePage(list,_vs){
   QROWS=list;
   var rows=QROWS;
   var fq=rows.filter(function(r){return r.fq_client_approved});
-  var iq=rows.filter(function(r){return !r.fq_client_approved});
 
   var h='<div class="card"><h3>MSSI Payment Transaction</h3>'+
-    '<p class="sub">Quotations the client has approved. A final-approved quotation '+
+    '<p class="sub">Quotations whose <b>Final Quotation</b> the client has approved — nothing earlier shows here. A final-approved quotation '+
     'stays <b>pending</b> until the agreed payment terms are met or someone vouches for it — '+
     'only then can the material request and Job Order be unlocked in Modcraft PMES.</p>'+
     (KS_TEST_N&&ksCanSeeTest()?'<p class="sub"><button class="ghost" onclick="ksToggleTest()" style="padding:3px 10px;font-size:12px;color:#b91c1c;border-color:#fca5a5">'+
@@ -758,20 +757,6 @@ function drawQueuePage(list,_vs){
          '<option value="released">Released</option></select>'+
      '</div><div id="qfList"></div></div>';
 
-  h+='<div class="card"><h3>Initial Quotation approved — canvassing only</h3>'+
-     '<p class="sub">Not yet final-approved. You can generate a purchase request and start '+
-     'canvassing suppliers, but it cannot be sent for approval and cannot unlock production.</p>'+
-     (iq.length?'<table><thead><tr><th>Quotation</th><th>Client</th><th class="num">Total</th>'+
-       '<th>Purchase request</th><th></th></tr></thead><tbody>'+
-       iq.map(function(r){return '<tr>'+
-         '<td><b>'+esc(r.serial)+'</b><div class="mini">'+esc(r.company||'')+'</div></td>'+
-         '<td>'+esc(r.client_name||'—')+'</td>'+
-         '<td class="num">'+money(r.total)+'</td>'+
-         '<td>'+(r.pr_no?esc(r.pr_no)+' '+pill(r.pr_status):'<span class="mini">none</span>')+'</td>'+
-         '<td class="num">'+(r.pr_no?'':
-           '<button data-act="genPR" data-serial="'+esc(r.serial)+'">Generate PR</button>')+'</td>'+
-       '</tr>'}).join('')+'</tbody></table>'
-      :'<div class="empty">Nothing at initial-approval stage.</div>')+'</div>';
 
   VIEW(_vs).innerHTML=h;
   el('qfCo').value=QF.co; el('qfSt').value=QF.st;
@@ -822,6 +807,9 @@ function gateCard(r){
       (r.pmes_job_code?'<span class="pill p-blue">PMES '+esc(r.pmes_job_code)+'</span>':
         (r.jo_number?'<span class="pill p-grey">Job Order '+esc(r.jo_number)+'</span>':''))+
       '<div class="spacer" style="flex:1"></div>'+
+      (r.pr_no?'<span class="pill p-grey">PR '+esc(r.pr_no)+'</span>'+pill(r.pr_status)
+        :'<button class="ghost" data-act="genPR" data-serial="'+esc(r.serial)+'" style="padding:3px 10px;font-size:12px" title="Purchase request for the outsource items on this quotation">'+
+          '<i class="ti ti-file-plus"></i> Generate PR</button>')+
       '<button class="ghost" data-act="viewQuote" data-serial="'+esc(r.serial)+'" style="padding:3px 10px;font-size:12px">'+
         '<i class="ti ti-file-text"></i> View quotation</button>'+
       '<b>'+money(r.total)+'</b></div>'+
