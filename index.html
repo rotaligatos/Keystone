@@ -2053,7 +2053,7 @@ async function openSupplier(id){
   if(s.error||!s.data){toast('Could not open the supplier: '+errMsg(s.error||'not found'),'err');return}
   var r=s.data;
   var d=await supa.from('adm_supplier_docs').select('*').eq('supplier_id',id).order('uploaded_at',{ascending:false});
-  var p=await supa.from('adm_supplier_products').select('id,item_name,unit,price,captured_at,spec').eq('supplier_id',id).order('item_name');
+  var p=await supa.from('adm_supplier_products').select('id,item_name,unit,price,captured_at,spec,category').eq('supplier_id',id).order('item_name');
   var docs=d.data||[], prods=p.data||[], pn={}; prods.forEach(function(x){pn[x.id]=x.item_name});
   var today=new Date().toISOString().slice(0,10), in30=new Date(Date.now()+30*86400000).toISOString().slice(0,10);
   var req=((CACHE.cfg&&CACHE.cfg.value)||{}).accreditationDocs||['BIR 2303 (COR)','DTI / SEC registration',"Mayor's permit"];
@@ -2066,7 +2066,7 @@ async function openSupplier(id){
     '<h4 style="margin:14px 0 6px">Items &amp; services they supplied ('+prods.length+')</h4>'+
     (prods.length?'<input id="spQ" placeholder="Search these items…" style="max-width:260px;margin-bottom:6px" oninput="var q=this.value.toLowerCase();Array.prototype.forEach.call(document.querySelectorAll(\'#spT tbody tr\'),function(t){t.style.display=t.textContent.toLowerCase().indexOf(q)>=0?\'\':\'none\'})">'+
       '<div style="max-height:320px;overflow:auto"><table id="spT"><thead><tr><th>Item / service</th><th>Unit</th><th class="num">Last price</th><th>Last bought</th></tr></thead><tbody>'+
-      prods.map(function(x){return '<tr><td>'+esc(x.item_name)+'</td><td class="mini">'+esc(x.unit||'')+'</td>'+
+      prods.map(function(x){return '<tr><td>'+esc(x.item_name)+(x.category?'<div class="mini">'+esc(x.category)+'</div>':'')+'</td><td class="mini">'+esc(x.unit||'')+'</td>'+
         '<td class="num">'+(x.price!=null?money(x.price):'<span class="mini">no price in Odoo</span>')+'</td>'+
         '<td class="mini">'+esc(x.captured_at?String(x.captured_at).slice(0,10):'')+(x.spec?' · '+esc(x.spec.replace(/^Last bought on /,'')):'')+'</td></tr>'}).join('')+
       '</tbody></table></div>':'<div class="empty">Nothing recorded yet.</div>')+
@@ -2221,13 +2221,18 @@ function supParseOdoo(aoa){
     var by={}, order=[], internal={}, lines=0;
     aoa.slice(1).forEach(function(r){
       var sup=txt(r[part]); if(!sup) return;
-      var item=txt(cP>=0?r[cP]:'')||txt(cD>=0?r[cD]:''), price=parseFloat(r[cPr]), qty=cQ>=0?parseFloat(r[cQ]):1;
+      // Column E (Product) is often only an expense category ("Factory Supplies", "Office Supplies",
+      // "Repairs & Maintenance…"); the real item is the Description (F). Use F, keep E as its category.
+      var prodE=txt(cP>=0?r[cP]:''), descF=txt(cD>=0?r[cD]:'').split(/\r?\n/), dTop=(descF[0]||'').trim(), dRest=descF.slice(1).join(' ').replace(/\s+/g,' ').trim();
+      var item=dTop||prodE, cat=(prodE&&dTop&&prodE.toLowerCase()!==dTop.toLowerCase()&&!/\d/.test(prodE))?prodE:'';
+      var price=parseFloat(r[cPr]), qty=cQ>=0?parseFloat(r[cQ]):1;
       if(!by[sup]){ by[sup]={name:sup,products:{}}; order.push(sup); }
       if(!item||!(qty>0)||/amount adjustment/i.test(item)) return;
       if(!(price>0)) price=null;   // some exports carry 0 for the price; keep the item, record no price
       lines++;
       var unit=txt(cU>=0?r[cU]:''), dt=iso(cDt>=0?r[cDt]:''), k=item.toLowerCase()+'|'+unit.toLowerCase(), cur=by[sup].products[k];
-      if(!cur||(price!=null&&(cur.price==null||(dt&&(!cur.date||dt>cur.date))))) by[sup].products[k]={item:item,unit:unit,price:price,date:dt,note:cRef>=0&&txt(r[cRef])?'Last bought on '+txt(r[cRef]).split(' ')[0]:''};
+      if(!cur||(price!=null&&(cur.price==null||(dt&&(!cur.date||dt>cur.date))))) by[sup].products[k]={item:item,unit:unit,price:price,date:dt,category:cat,
+        note:[cRef>=0&&txt(r[cRef])?'Last bought on '+txt(r[cRef]).split(' ')[0]:'',dRest].filter(Boolean).join(' — ').slice(0,300)};
     });
     var rows=order.map(function(n){var s=by[n]; return {name:s.name,products:Object.keys(s.products).map(function(k){return s.products[k]})}});
     if(!rows.length) return {error:'No suppliers found in the Partner column.'};
