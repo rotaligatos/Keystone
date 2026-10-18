@@ -1938,6 +1938,9 @@ async function viewSourcing(){
   var rows=(s.data||[]), docs=(d.data||[]);
   SUPS=rows;
   var byS={}; docs.forEach(function(x){(byS[x.supplier_id]=byS[x.supplier_id]||[]).push(x)});
+  // what each supplier has supplied (items and services, from purchase history or added by hand)
+  var pq=await supa.from('adm_supplier_products').select('supplier_id,item_name').order('captured_at',{ascending:false}).limit(20000);
+  var byP={}; (pq.data||[]).forEach(function(x){(byP[x.supplier_id]=byP[x.supplier_id]||[]).push(x.item_name)});
   var soon=0, expired=0;
   rows.forEach(function(r){ var st=supDocState(byS[r.id]||[]); r._docs=st; if(st.expired) expired++; if(st.soon) soon++; });
   var can=ME.caps.can_source;
@@ -1948,21 +1951,22 @@ async function viewSourcing(){
       (can?'<button class="primary" data-act="addSupplier"><i class="ti ti-plus"></i> Add supplier</button>'+
         '<button data-act="importSuppliers"><i class="ti ti-file-spreadsheet"></i> Import from Odoo (Excel)</button>'+
         '<button data-act="findSuppliers"><i class="ti ti-world-search"></i> Find suppliers on the web</button>':'')+
-      '<input id="supQ" placeholder="Search suppliers…" style="max-width:280px" oninput="filterSup()">'+
+      '<input id="supQ" placeholder="Search a supplier or an item…" style="max-width:280px" oninput="filterSup()">'+
       '<select id="supSt" onchange="filterSup()" style="max-width:180px"><option value="">Any status</option>'+
         ['prospect','accredited','preferred','suspended','blacklisted'].map(function(x){return '<option value="'+x+'">'+supStatusLabel(x)+'</option>'}).join('')+
         '<option value="docs">Papers expired / expiring</option></select>'+
     '</div>'+
     ((expired||soon)?'<div class="warn" style="margin-bottom:10px">'+(expired?'<b>'+expired+'</b> supplier(s) have an expired document. ':'')+
       (soon?'<b>'+soon+'</b> have a document expiring within 30 days.':'')+'</div>':'')+
-    (rows.length?'<table id="supTbl"><thead><tr><th>Supplier</th><th>Type</th><th>Categories</th>'+
+    (rows.length?'<table id="supTbl"><thead><tr><th>Supplier</th><th>Type</th><th>What they supply</th>'+
       '<th>Terms</th><th>Papers</th><th>Status</th><th></th></tr></thead><tbody>'+
       rows.map(function(r){var st=r._docs;
-        return '<tr data-n="'+esc(((r.name||'')+' '+(r.city||'')+' '+(r.categories||[]).join(' ')+' '+(r.tin||'')).toLowerCase())+'" data-st="'+esc(r.status||'')+'" data-docs="'+((st.expired||st.soon)?'1':'')+'">'+
+        var its=byP[r.id]||[];
+        return '<tr data-n="'+esc(((r.name||'')+' '+(r.city||'')+' '+(r.categories||[]).join(' ')+' '+(r.tin||'')+' '+its.join(' ')).toLowerCase())+'" data-st="'+esc(r.status||'')+'" data-docs="'+((st.expired||st.soon)?'1':'')+'">'+
         '<td><b>'+esc(r.name)+'</b><div class="mini">'+esc([r.contact_person,r.contact_phone,r.city,
           r.source==='odoo'?'from Odoo':'',r.source==='web'?'found on the web':''].filter(Boolean).join(' · '))+'</div></td>'+
         '<td class="mini">'+esc(r.business_type||'—')+'</td>'+
-        '<td class="mini">'+esc((r.categories||[]).join(', ')||'—')+'</td>'+
+        '<td class="mini">'+(its.length?'<b>'+its.length+' item'+(its.length===1?'':'s')+'</b> — '+esc(its.slice(0,3).join(' · '))+(its.length>3?' …':''):esc((r.categories||[]).join(', ')||'—'))+'</td>'+
         '<td class="mini">'+esc(r.payment_terms||'—')+'</td>'+
         '<td class="mini">'+(st.n?st.n+' file(s)':'—')+(st.expired?' <span class="pill p-red">'+st.expired+' expired</span>':'')+
           (st.soon?' <span class="pill p-amber">'+st.soon+' expiring</span>':'')+'</td>'+
@@ -2049,7 +2053,7 @@ async function openSupplier(id){
   if(s.error||!s.data){toast('Could not open the supplier: '+errMsg(s.error||'not found'),'err');return}
   var r=s.data;
   var d=await supa.from('adm_supplier_docs').select('*').eq('supplier_id',id).order('uploaded_at',{ascending:false});
-  var p=await supa.from('adm_supplier_products').select('id,item_name').eq('supplier_id',id).order('item_name');
+  var p=await supa.from('adm_supplier_products').select('id,item_name,unit,price,captured_at,spec').eq('supplier_id',id).order('item_name');
   var docs=d.data||[], prods=p.data||[], pn={}; prods.forEach(function(x){pn[x.id]=x.item_name});
   var today=new Date().toISOString().slice(0,10), in30=new Date(Date.now()+30*86400000).toISOString().slice(0,10);
   var req=((CACHE.cfg&&CACHE.cfg.value)||{}).accreditationDocs||['BIR 2303 (COR)','DTI / SEC registration',"Mayor's permit"];
@@ -2059,6 +2063,13 @@ async function openSupplier(id){
       (r.website?' · <a href="'+esc(/^https?:/.test(r.website)?r.website:'https://'+r.website)+'" target="_blank" rel="noopener">website</a>':'')+'</div>'+
     (r.accredited_by?'<div class="mini" style="margin-top:4px">Accredited by '+esc(r.accredited_by)+' · '+dt(r.accredited_at)+(r.accreditation_note?' · '+esc(r.accreditation_note):'')+'</div>':'')+
     (r.status==='suspended'||r.status==='blacklisted'?'<div class="warn" style="margin-top:6px">'+esc(supStatusLabel(r.status))+(r.accreditation_note?': '+esc(r.accreditation_note):'')+'</div>':'')+
+    '<h4 style="margin:14px 0 6px">Items &amp; services they supplied ('+prods.length+')</h4>'+
+    (prods.length?'<input id="spQ" placeholder="Search these items…" style="max-width:260px;margin-bottom:6px" oninput="var q=this.value.toLowerCase();Array.prototype.forEach.call(document.querySelectorAll(\'#spT tbody tr\'),function(t){t.style.display=t.textContent.toLowerCase().indexOf(q)>=0?\'\':\'none\'})">'+
+      '<div style="max-height:320px;overflow:auto"><table id="spT"><thead><tr><th>Item / service</th><th>Unit</th><th class="num">Last price</th><th>Last bought</th></tr></thead><tbody>'+
+      prods.map(function(x){return '<tr><td>'+esc(x.item_name)+'</td><td class="mini">'+esc(x.unit||'')+'</td>'+
+        '<td class="num">'+(x.price!=null?money(x.price):'<span class="mini">no price in Odoo</span>')+'</td>'+
+        '<td class="mini">'+esc(x.captured_at?String(x.captured_at).slice(0,10):'')+(x.spec?' · '+esc(x.spec.replace(/^Last bought on /,'')):'')+'</td></tr>'}).join('')+
+      '</tbody></table></div>':'<div class="empty">Nothing recorded yet.</div>')+
     '<h4 style="margin:14px 0 6px">Accreditation papers</h4>'+
     '<div class="row" style="flex-wrap:wrap;gap:6px">'+req.map(function(t){return '<span class="pill '+(have(t)?'p-green':'p-amber')+'">'+(have(t)?'✓ ':'Missing: ')+esc(t)+'</span>'}).join('')+'</div>'+
     '<h4 style="margin:14px 0 6px">Documents</h4>'+
