@@ -536,7 +536,7 @@ function previewSummary(fn,d){
    leaf (the screen shown). Each main tab shows a count of what waits for the signed-in person. */
 var GROUPS=[
   {k:'dash',  t:'Dashboard',     i:'ti-chart-bar',     leaves:[['dash','Dashboard']]},
-  {k:'queue', t:'MSSI Payment Transaction', i:'ti-lock-open',     leaves:[['queue','MSSI Payment Transaction']]},
+  {k:'queue', t:'Payment & Release', i:'ti-lock-open',     leaves:[['queue','Payment & Release']]},
   {k:'purch', t:'Purchasing',    i:'ti-file-dollar',   leaves:[['review','My requests'],['appr','Approvals'],['po','Purchase orders'],['src','Suppliers']]},
   {k:'wh',    t:'Warehouse',     i:'ti-package',       leaves:[['mr','Material requests'],['boards','Extra board requests']]},
   // Rommel 2026-09-28: read-only view of HATID (logistics). Signing stays in HATID.
@@ -726,7 +726,7 @@ async function viewQueue(){
     .eq('fq_client_approved',true)
     .order('total',{ascending:false}).limit(2000);
   if(q.error){
-    if(QCACHE){ toast('Could not refresh MSSI Payment Transaction: '+errMsg(q.error)); return; }
+    if(QCACHE){ toast('Could not refresh Payment & Release: '+errMsg(q.error)); return; }
     VIEW(_vs).innerHTML='<div class="card"><div class="warn">'+esc(errMsg(q.error))+'</div></div>'; return;
   }
   var fresh=(q.data||[]).filter(function(r){return r.fq_client_approved});
@@ -771,7 +771,7 @@ function drawQueuePage(list,_vs){
   var rows=QROWS;
   var fq=rows.filter(function(r){return r.fq_client_approved});
 
-  var h='<div class="card"><h3>MSSI Payment Transaction</h3>'+
+  var h='<div class="card"><h3>Payment &amp; Release</h3>'+
     '<p class="sub">Quotations whose <b>Final Quotation</b> the client has approved — nothing earlier shows here. A final-approved quotation '+
     'stays <b>pending</b> until the agreed payment terms are met or someone vouches for it — '+
     'only then can the material request and Job Order be unlocked and sent to PMES.</p>'+
@@ -1223,7 +1223,15 @@ async function setReleasePeople(p){
   if(r.error){ toast('Could not change it: '+errMsg(r.error),'err'); render(); return; }
   RELEASE_PEOPLE=p; render();
 }
-function release(gid){
+async function release(gid){
+  var mr=await supa.from('adm_material_requests').select('id',{count:'exact',head:true}).eq('gate_id',gid);
+  if(!mr.error&&!mr.count){
+    toast('No material request has been built for this job yet — building it first.','ok');
+    return rpcPreview('adm_build_material_requests',{p_gate_id:gid},'Build material requests — review',function(){ render(); release2(gid); });
+  }
+  release2(gid);
+}
+function release2(gid){
   var go_=function(reason){rpcPreview('adm_release_gate',{p_gate_id:gid,p_override_reason:reason||null},'Unlock material request + Job Order — review')};
   // Segregation of duties: whoever opened the gate may not release it, except an Admin/Director with a
   // written reason. Ask only when it applies.
@@ -1280,7 +1288,7 @@ async function viewReview(){
 
   if(!mine.length){
     h+='<div class="card"><div class="info">You have no purchase requests yet. '+
-       'Go to <b>MSSI Payment Transaction</b> and press <b>Generate PR</b> on a quotation that has '+
+       'Go to <b>Payment &amp; Release</b> and press <b>Generate PR</b> on a quotation that has '+
        'outsource materials.</div></div>';
   }
   VIEW(_vs).innerHTML=h;
