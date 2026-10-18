@@ -941,7 +941,8 @@ function gateCard(r){
      '<div class="stack"><span class="mini">Balance</span><b style="color:var(--amber-ink)">'+money(r.balance)+'</b></div>'+
      '</div>'+
      '<div class="bar"><i style="width:'+pct.toFixed(1)+'%"></i></div>'+
-     '<div class="mini" style="margin-top:5px">'+esc(r.payment_terms||'No terms recorded')+'</div>'+
+     '<div class="mini" style="margin-top:5px">'+(r.payment_option?esc(r.payment_option)+' · ':'')+esc(r.payment_terms||'No terms recorded')+
+       (r.odoo_so?' · Odoo SO <b>'+esc(r.odoo_so)+'</b>':'')+'</div>'+
      (r.vouched_at?'<div class="info" style="margin-top:8px"><i class="ti ti-shield-check"></i> Vouched by <b>'+esc(r.vouch_name||r.vouched_by||'—')+'</b>'+
         (r.vouch_name&&r.vouched_by?' · recorded by '+esc(r.vouched_by):'')+' · '+dt(r.vouched_at)+
         (r.vouch_reason?' · '+esc(r.vouch_reason):'')+
@@ -1045,6 +1046,9 @@ async function openGate(serial){
         terms.map(function(t){return '<option>'+esc(t)+'</option>'}).join('')+'</select>'+
       '<input id="gTermsTxt" style="margin-top:6px" value="'+esc(terms[0])+'">'+
       '<div class="mini">The % required to unlock follows the terms you pick (the first % in them); you can still change it.</div>'+
+      // World Class Laminate jobs on payment terms carry their Odoo sales order number (Rommel, 2026-10-18).
+      '<div id="gSoBox" style="display:none"><label>Odoo SO number (required for WCL on payment terms)</label>'+
+        '<input id="gSo" placeholder="e.g. S79400"></div>'+
     '</div>'+
     '<div id="gVouchBox" style="display:none">'+
       '<div class="warn">Vouching unlocks production <b>without payment</b>. It is recorded with the name of who vouched, the proof, and your name as the one who recorded it.</div>'+
@@ -1060,6 +1064,9 @@ async function openGate(serial){
   function syncPct(){var m=String(el('gTermsTxt').value).match(/(\d+(?:\.\d+)?)\s*%/); if(m) el('gPct').value=m[1];}
   el('gTerms').onchange=function(){el('gTermsTxt').value=this.value;syncPct()};
   el('gTermsTxt').oninput=syncPct; syncPct();
+  var isWcl=_coKey(r.company)==='W';
+  function syncSo(){ el('gSoBox').style.display=(isWcl&&/payment terms/i.test(el('gOpt').value))?'':'none'; }
+  el('gOpt').addEventListener('change',syncSo); syncSo();
   el('gOpt').onchange=function(){
     var v=this.value==='vouch';
     el('gTermsBox').style.display=v?'none':''; el('gVouchBox').style.display=v?'':'none';
@@ -1068,12 +1075,14 @@ async function openGate(serial){
   el('okGate').onclick=async function(){
     var isV=el('gOpt').value==='vouch', vf=null;
     if(isV){ vf=readVouchFields(); if(!vf) return; }
+    var soNeeded=!isV&&isWcl&&/payment terms/i.test(el('gOpt').value), so=el('gSo').value.trim();
+    if(soNeeded&&!so){ toast('Enter the Odoo SO number for this WCL job.','err'); el('gSo').focus(); return; }
     this.disabled=true;
     var ins=await supa.from('adm_release_gates').insert({
       quotation_serial:serial, company:r.company,
       destination_company:el('gCo').value,
       quotation_total:r.total, amount_due:parseFloat(el('gAmt').value)||0,
-      payment_option:isV?'Vouch':el('gOpt').value,
+      payment_option:isV?'Vouch':el('gOpt').value, odoo_so:soNeeded?so:null,
       payment_terms:isV?'Vouched by '+vf.name:el('gTermsTxt').value,
       required_pct:isV?100:(parseFloat(el('gPct').value)||100),
       source_quotation_status:r.status, created_by:ME.email}).select('id').single();
