@@ -315,6 +315,7 @@ var ACTIONS={
   vouch:function(d){vouch(d.gate)},
   buildMR:function(d){buildMR(d.gate)},
   release:function(d){release(d.gate)},
+  canvItems:function(d){canvItems(d.serial)},
   setReleasePeople:function(d){setReleasePeople(d.people)},
   prLines:function(d){prLines(d.id)},
   submitPR:function(d){submitPR(d.id)},
@@ -712,14 +713,34 @@ async function viewQueue(){
     VIEW(_vs).innerHTML='<div class="card"><div class="warn">'+esc(errMsg(q.error))+'</div></div>'; return;
   }
   var fresh=(q.data||[]).filter(function(r){return r.fq_client_approved});
+  // Advance canvassing (Rommel, 2026-10-18): purchasing may SEE the outsource items of a quotation the
+  // client has not final-approved yet, to ask suppliers early. No payment, gate or purchase request.
+  var iqq=await supa.rpc('adm_canvass_list');   // only those with outsource items
+  var iqFresh=(iqq.data||[]).filter(function(r){return !isTestSerial(r.serial)||(KS_SHOW_TEST&&ksCanSeeTest())});
+  CANV_ROWS=iqFresh;
   KS_TEST_N=fresh.filter(function(r){return isTestSerial(r.serial)}).length;
   if(!(KS_SHOW_TEST&&ksCanSeeTest())) fresh=fresh.filter(function(r){return !isTestSerial(r.serial)});
-  var sig=JSON.stringify(fresh);
+  var sig=JSON.stringify(fresh)+'|'+JSON.stringify(iqFresh);
   if(QCACHE&&sig===QCACHE_SIG) return;          // nothing changed since the cached draw
   QCACHE=fresh; QCACHE_SIG=sig;
   drawQueuePage(fresh,_vs);
 }
 var QCACHE=null, QCACHE_SIG='';
+var CANV_ROWS=[], CANV_OPEN={};
+async function canvItems(serial){
+  var box=el('canv-'+serial); if(!box) return;
+  if(CANV_OPEN[serial]){ delete CANV_OPEN[serial]; box.innerHTML=''; return; }
+  CANV_OPEN[serial]=1; box.innerHTML='<div class="mini">Loading outsource items…</div>';
+  var r=await supa.rpc('adm_material_summary',{p_serial:serial});
+  if(r.error){ box.innerHTML='<div class="warn">'+esc(errMsg(r.error))+'</div>'; return; }
+  var rows=(r.data||[]).filter(function(x){return /^outsource/.test(String(x.kind||''))});
+  box.innerHTML=rows.length
+    ?'<table style="margin-top:6px"><thead><tr><th>Item</th><th>Type</th><th class="num">Qty</th><th>Unit</th><th>Areas</th><th class="num">Est. price</th></tr></thead><tbody>'+
+      rows.map(function(x){return '<tr><td>'+esc(x.item_name)+'</td><td>'+esc(String(x.kind).replace(/^outsource_?/,'')||'—')+'</td>'+
+        '<td class="num">'+num(x.total_qty)+'</td><td>'+esc(x.unit||'')+'</td><td class="mini">'+esc(x.areas||'')+'</td>'+
+        '<td class="num">'+money(x.est_price)+'</td></tr>'}).join('')+'</tbody></table>'
+    :'<div class="mini" style="margin-top:6px">No outsource items on this quotation.</div>';
+}
 /* Test quotations (2026-10-10). Modcraft numbers a test quotation QT-X…; it runs the whole live
    chain (gate, MRF, Job Order, PMES) so the chain can be tested end to end. It must never sit in
    the real queue or the counts: hidden for everyone, shown only to an Admin/Director who asks. */
@@ -729,7 +750,7 @@ function ksCanSeeTest(){ return ME.role==='Admin'||ME.role==='Director'; }
 function ksToggleTest(){ KS_SHOW_TEST=!KS_SHOW_TEST; QCACHE=null; QCACHE_SIG=''; render(); }
 function drawQueuePage(list,_vs){
   if(_vs!==undefined&&_vs!==render._seq) return;   // the person has moved to another tab
-  QROWS=list;
+  QROWS=list; CANV_OPEN={};
   var rows=QROWS;
   var fq=rows.filter(function(r){return r.fq_client_approved});
 
@@ -756,6 +777,20 @@ function drawQueuePage(list,_vs){
          '<option value="pending_payment">Awaiting payment</option><option value="cleared">Cleared to release</option>'+
          '<option value="released">Released</option></select>'+
      '</div><div id="qfList"></div></div>';
+
+  var canv=CANV_ROWS||[];
+  h+='<div class="card"><h3>Advance canvassing — outsource items</h3>'+
+     '<p class="sub">Quotations the client has <b>not</b> final-approved yet. View their outsource items to ask suppliers early. '+
+     'No payment, gate or purchase request can be made here — those start once the client approves the Final Quotation.</p>'+
+     (canv.length?canv.map(function(r){return '<div class="gate" style="margin-bottom:8px">'+
+        '<div class="row" style="flex-wrap:wrap;gap:6px"><b>'+esc(r.serial)+'</b>'+
+        (isTestSerial(r.serial)?'<span class="pill" style="background:#dc2626;color:#fff">TEST</span>':'')+
+        '<span>'+esc(r.client_name||'—')+(r.project_name?' — '+esc(r.project_name):'')+'</span>'+
+        '<span class="mini">'+esc(r.company||'')+(r.prepared_by?' · '+esc(r.prepared_by):'')+' · '+r.lines+' outsource item'+(+r.lines===1?'':'s')+' · est. '+money(r.est_total)+'</span>'+
+        '<div class="spacer" style="flex:1"></div>'+
+        '<button class="ghost" data-act="canvItems" data-serial="'+esc(r.serial)+'" style="padding:3px 10px;font-size:12px"><i class="ti ti-list-search"></i> Outsource items</button></div>'+
+        '<div id="canv-'+esc(r.serial)+'"></div></div>'}).join('')
+      :'<div class="empty">No quotation waiting for final approval has outsource items.</div>')+'</div>';
 
 
   VIEW(_vs).innerHTML=h;
