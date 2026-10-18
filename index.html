@@ -313,6 +313,7 @@ var ACTIONS={
   printQuote:function(){var f=el('qvFrame');if(f&&f.contentWindow){f.contentWindow.focus();f.contentWindow.print()}},
   recordPay:function(d){recordPay(d.gate)},
   vouch:function(d){vouch(d.gate)},
+  vouchProof:function(d){viewVouchProof(d.path)},
   buildMR:function(d){buildMR(d.gate)},
   release:function(d){release(d.gate)},
   qfTab:function(d){qfTab(d.tab)},
@@ -940,7 +941,13 @@ function gateCard(r){
      '<div class="stack"><span class="mini">Balance</span><b style="color:var(--amber-ink)">'+money(r.balance)+'</b></div>'+
      '</div>'+
      '<div class="bar"><i style="width:'+pct.toFixed(1)+'%"></i></div>'+
-     '<div class="mini" style="margin-top:5px">'+esc(r.payment_terms||'No terms recorded')+'</div>';
+     '<div class="mini" style="margin-top:5px">'+esc(r.payment_terms||'No terms recorded')+'</div>'+
+     (r.vouched_at?'<div class="info" style="margin-top:8px"><i class="ti ti-shield-check"></i> Vouched by <b>'+esc(r.vouch_name||r.vouched_by||'—')+'</b>'+
+        (r.vouch_name&&r.vouched_by?' · recorded by '+esc(r.vouched_by):'')+' · '+dt(r.vouched_at)+
+        (r.vouch_reason?' · '+esc(r.vouch_reason):'')+
+        (r.vouch_expires_at?' · expires '+dt(r.vouch_expires_at):'')+
+        (r.vouch_proof?' · <a href="#" data-act="vouchProof" data-path="'+esc(r.vouch_proof)+'">View proof</a>':' · <span class="mini">no proof on file</span>')+
+      '</div>':'');
 
   if(r.gate_status!=='released'){
     h+='<div class="row" style="margin-top:11px">'+
@@ -1014,7 +1021,6 @@ async function openGate(serial){
   var cfg=(CACHE.cfg&&CACHE.cfg.value)||{};
   var terms=(cfg.termsPresets)||['100% upon approval','50% downpayment, 50% before delivery',
     '30% downpayment, 70% before delivery'];
-  var opts=(cfg.paymentOptions)||['Bank transfer','Cheque','Cash','Online'];
   openModal('<h3>Open payment gate — '+esc(serial)+'</h3>'+
     '<p class="sub">The gate holds production shut until these terms are met. '+
     'Terms are entered manually for now; when Modcraft exposes client payment terms '+
@@ -1026,13 +1032,21 @@ async function openGate(serial){
         '</select><div class="mini">Which company’s production makes this job — its PMES line receives it. '+
         'MSSI builds MSSI and WCL jobs; CWLI builds Cebu jobs. Change it only when another plant builds this one.</div></div>'+
       '<div><label>Payment option</label><select id="gOpt">'+
-        opts.map(function(o){return '<option>'+esc(o)+'</option>'}).join('')+'</select></div>'+
-      '<div><label>Required to unlock (%)</label><input id="gPct" type="number" min="1" max="100" value="50"></div>'+
+        '<option value="terms">With terms</option>'+
+        '<option value="vouch"'+(ME.caps.can_vouch?'':' disabled')+'>Vouch'+(ME.caps.can_vouch?'':' (you are not allowed to vouch)')+'</option>'+
+        '</select></div>'+
     '</div>'+
-    '<label>Agreed terms</label><select id="gTerms" onchange="el(\'gTermsTxt\').value=this.value">'+
-      terms.map(function(t){return '<option>'+esc(t)+'</option>'}).join('')+'</select>'+
-    '<input id="gTermsTxt" style="margin-top:6px" value="'+esc(terms[0])+'">'+
-    '<div class="mini">The % required to unlock follows the terms you pick (the first % in them); you can still change it.</div>'+
+    '<div id="gTermsBox">'+
+      '<div class="grid g2"><div><label>Required to unlock (%)</label><input id="gPct" type="number" min="1" max="100" value="50"></div><div></div></div>'+
+      '<label>Agreed terms</label><select id="gTerms">'+
+        terms.map(function(t){return '<option>'+esc(t)+'</option>'}).join('')+'</select>'+
+      '<input id="gTermsTxt" style="margin-top:6px" value="'+esc(terms[0])+'">'+
+      '<div class="mini">The % required to unlock follows the terms you pick (the first % in them); you can still change it.</div>'+
+    '</div>'+
+    '<div id="gVouchBox" style="display:none">'+
+      '<div class="warn">Vouching unlocks production <b>without payment</b>. It is recorded with the name of who vouched, the proof, and your name as the one who recorded it.</div>'+
+      vouchFieldsHtml()+
+    '</div>'+
     '<div class="row right" style="margin-top:14px">'+
       '<button class="ghost" data-act="closeModal">Cancel</button>'+
       '<button class="primary" id="okGate">Open gate</button></div>');
@@ -1043,18 +1057,27 @@ async function openGate(serial){
   function syncPct(){var m=String(el('gTermsTxt').value).match(/(\d+(?:\.\d+)?)\s*%/); if(m) el('gPct').value=m[1];}
   el('gTerms').onchange=function(){el('gTermsTxt').value=this.value;syncPct()};
   el('gTermsTxt').oninput=syncPct; syncPct();
+  el('gOpt').onchange=function(){
+    var v=this.value==='vouch';
+    el('gTermsBox').style.display=v?'none':''; el('gVouchBox').style.display=v?'':'none';
+    el('okGate').textContent=v?'Open gate and vouch':'Open gate';
+  };
   el('okGate').onclick=async function(){
+    var isV=el('gOpt').value==='vouch', vf=null;
+    if(isV){ vf=readVouchFields(); if(!vf) return; }
     this.disabled=true;
     var ins=await supa.from('adm_release_gates').insert({
       quotation_serial:serial, company:r.company,
       destination_company:el('gCo').value,
       quotation_total:r.total, amount_due:parseFloat(el('gAmt').value)||0,
-      payment_option:el('gOpt').value, payment_terms:el('gTermsTxt').value,
-      required_pct:parseFloat(el('gPct').value)||100,
-      source_quotation_status:r.status, created_by:ME.email});
+      payment_option:isV?'Vouch':'With terms',
+      payment_terms:isV?'Vouched by '+vf.name:el('gTermsTxt').value,
+      required_pct:isV?100:(parseFloat(el('gPct').value)||100),
+      source_quotation_status:r.status, created_by:ME.email}).select('id').single();
     closeModal();
     if(ins.error){toast(errMsg(ins.error),'err');return}
-    toast('Gate opened.','ok');render();
+    if(!isV){ toast('Gate opened.','ok'); render(); return; }
+    applyVouch(ins.data.id,vf,true);
   };
 }
 
@@ -1083,22 +1106,51 @@ async function recordPay(gid){
   };
 }
 
+/* A vouch records WHO vouched (by name) and proof that they did — e.g. a screenshot of their message
+   or a signed note (Rommel, 2026-10-18). The proof goes to the private keystone-vouch bucket under the
+   gate's own folder; adm_vouch_gate refuses without both. */
+function vouchFieldsHtml(){
+  return '<label>Vouched by (name of the person who vouched)</label><input id="vN" placeholder="e.g. the director who approved it">'+
+    '<label>Reason (required)</label><textarea id="vR" rows="2"></textarea>'+
+    '<label>Proof that they vouched (required)</label><input id="vP" type="file" accept="image/*,application/pdf">'+
+    '<div class="mini">A screenshot of their message, an email, or a signed note. Image or PDF, up to 10 MB.</div>'+
+    '<label>Vouch expires (optional)</label><input id="vE" type="date">';
+}
+function readVouchFields(){
+  var name=el('vN').value.trim(), reason=el('vR').value.trim(), f=el('vP').files&&el('vP').files[0];
+  if(!name){toast('Enter the name of the person who vouched.','err');return null}
+  if(!reason){toast('A reason is required to vouch.','err');return null}
+  if(!f){toast('Attach proof that it was vouched.','err');return null}
+  if(f.size>10*1024*1024){toast('The proof file is over 10 MB.','err');return null}
+  return {name:name,reason:reason,file:f,exp:el('vE').value?new Date(el('vE').value).toISOString():null};
+}
+async function applyVouch(gid,vf,gateJustOpened){
+  var safe=String(vf.file.name).replace(/[^A-Za-z0-9._-]+/g,'_').slice(-80);
+  var path=gid+'/'+Date.now()+'_'+safe;
+  var up=await supa.storage.from('keystone-vouch').upload(path,vf.file,{upsert:false,contentType:vf.file.type||undefined});
+  if(up.error){
+    toast((gateJustOpened?'Gate opened, but the proof could not be uploaded — press Vouch on the card to try again. ':'Proof could not be uploaded: ')+errMsg(up.error),'err');
+    if(gateJustOpened) render();
+    return;
+  }
+  rpcPreview('adm_vouch_gate',{p_gate_id:gid,p_reason:vf.reason,p_vouch_name:vf.name,p_proof:path,p_expires_at:vf.exp},
+    'Vouch — review');
+}
+async function viewVouchProof(path){
+  var r=await supa.storage.from('keystone-vouch').createSignedUrl(path,3600);
+  if(r.error){toast(errMsg(r.error),'err');return}
+  window.open(r.data.signedUrl,'_blank','noopener');
+}
 function vouch(gid){
   openModal('<h3>Vouch for this job</h3>'+
-    '<div class="warn">Vouching unlocks production <b>without payment</b>. '+
-    'It is recorded against your name with your reason, and can be given an expiry.</div>'+
-    '<label>Reason (required)</label><textarea id="vR" rows="3"></textarea>'+
-    '<label>Vouch expires (optional)</label><input id="vE" type="date">'+
+    '<div class="warn">Vouching unlocks production <b>without payment</b>. It is recorded with the name of who vouched, the proof, and your name as the one who recorded it.</div>'+
+    vouchFieldsHtml()+
     '<div class="row right" style="margin-top:14px">'+
       '<button class="ghost" data-act="closeModal">Cancel</button>'+
       '<button class="primary" id="okV">Continue</button></div>');
   el('okV').onclick=function(){
-    var reason=el('vR').value.trim();
-    if(!reason){toast('A reason is required to vouch.','err');return}
-    var exp=el('vE').value?new Date(el('vE').value).toISOString():null;
-    closeModal();
-    rpcPreview('adm_vouch_gate',{p_gate_id:gid,p_reason:reason,p_expires_at:exp},
-      'Vouch — review');
+    var vf=readVouchFields(); if(!vf) return;
+    closeModal(); applyVouch(gid,vf,false);
   };
 }
 
