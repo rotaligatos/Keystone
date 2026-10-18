@@ -327,6 +327,14 @@ var ACTIONS={
   brDecide:function(d){brDecide(d.id,d.ok==='1')},
   brFinal:function(d){brFinal(d.id,d.ok==='1')},
   addSupplier:function(){addSupplier()},
+  importSuppliers:function(){importSuppliers()},
+  findSuppliers:function(){findSuppliers()},
+  openSupplier:function(d){openSupplier(d.id)},
+  supEdit:function(d){supEdit(d.id)},
+  supStatus:function(d){supStatus(d.id)},
+  supDocUpload:function(d){supDocUpload(d.id)},
+  supDocOpen:function(d){supDocOpen(d.path)},
+  addFound:function(d){addFound(d.i)},
   buildOff:function(){buildOff()},
   openPR:function(d){openPR(d.id)},
   signPR:function(d){signPR(d.id)},
@@ -1602,85 +1610,315 @@ function issuePO(id){rpcPreview('adm_po_issue',{p_po_id:id},'Purchase — review
 async function viewSourcing(){
   var _vs=render._seq;   // this page's ticket — see VIEW()
   VIEW(_vs).innerHTML='<div class="empty">Loading suppliers…</div>';
-  var s=await supa.from('adm_suppliers').select('*').order('name').limit(400);
-  var rows=(s.data||[]);
-  var h='<div class="card"><h3>Supplier directory</h3>'+
-    '<p class="sub">Company profile, product list and pricing for each supplier, with a credibility '+
-    'status. Recommendations rank offers on price, lead time, rating and terms.</p>'+
-    '<div class="row" style="margin-bottom:10px">'+
-      (ME.caps.can_source?'<button class="primary" data-act="addSupplier"><i class="ti ti-plus"></i> Add supplier</button>':'')+
+  var s=await supa.from('adm_suppliers').select('*').order('name').limit(2000);
+  var d=await supa.from('adm_supplier_docs').select('supplier_id,doc_type,expires_on,replaced_by').is('replaced_by',null).limit(5000);
+  if(s.error){ VIEW(_vs).innerHTML='<div class="card"><h3>Suppliers could not load</h3><p class="sub">'+esc(errMsg(s.error))+'</p></div>'; return; }
+  var rows=(s.data||[]), docs=(d.data||[]);
+  SUPS=rows;
+  var byS={}; docs.forEach(function(x){(byS[x.supplier_id]=byS[x.supplier_id]||[]).push(x)});
+  var soon=0, expired=0;
+  rows.forEach(function(r){ var st=supDocState(byS[r.id]||[]); r._docs=st; if(st.expired) expired++; if(st.soon) soon++; });
+  var can=ME.caps.can_source;
+  var h='<div class="card"><h3>Suppliers</h3>'+
+    '<p class="sub">One list for WCL, MSSI and CWL. A supplier starts as a <b>prospect</b>; an approver accredits it once its papers are in. '+
+    'Documents (permits, TDS, SDS) are kept with their expiry dates.</p>'+
+    '<div class="row" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">'+
+      (can?'<button class="primary" data-act="addSupplier"><i class="ti ti-plus"></i> Add supplier</button>'+
+        '<button data-act="importSuppliers"><i class="ti ti-file-spreadsheet"></i> Import from Odoo (Excel)</button>'+
+        '<button data-act="findSuppliers"><i class="ti ti-world-search"></i> Find suppliers on the web</button>':'')+
       '<input id="supQ" placeholder="Search suppliers…" style="max-width:280px" oninput="filterSup()">'+
+      '<select id="supSt" onchange="filterSup()" style="max-width:180px"><option value="">Any status</option>'+
+        ['prospect','accredited','preferred','suspended','blacklisted'].map(function(x){return '<option value="'+x+'">'+supStatusLabel(x)+'</option>'}).join('')+
+        '<option value="docs">Papers expired / expiring</option></select>'+
     '</div>'+
+    ((expired||soon)?'<div class="warn" style="margin-bottom:10px">'+(expired?'<b>'+expired+'</b> supplier(s) have an expired document. ':'')+
+      (soon?'<b>'+soon+'</b> have a document expiring within 30 days.':'')+'</div>':'')+
     (rows.length?'<table id="supTbl"><thead><tr><th>Supplier</th><th>Type</th><th>Categories</th>'+
-      '<th>Terms</th><th class="num">Lead</th><th>Status</th><th class="num">Rating</th><th></th></tr></thead><tbody>'+
-      rows.map(function(r){return '<tr data-n="'+esc((r.name||'').toLowerCase())+'">'+
-        '<td><b>'+esc(r.name)+'</b><div class="mini">'+esc(r.contact_person||'')+
-          (r.contact_phone?' · '+esc(r.contact_phone):'')+'</div></td>'+
+      '<th>Terms</th><th>Papers</th><th>Status</th><th></th></tr></thead><tbody>'+
+      rows.map(function(r){var st=r._docs;
+        return '<tr data-n="'+esc(((r.name||'')+' '+(r.city||'')+' '+(r.categories||[]).join(' ')+' '+(r.tin||'')).toLowerCase())+'" data-st="'+esc(r.status||'')+'" data-docs="'+((st.expired||st.soon)?'1':'')+'">'+
+        '<td><b>'+esc(r.name)+'</b><div class="mini">'+esc([r.contact_person,r.contact_phone,r.city,
+          r.source==='odoo'?'from Odoo':'',r.source==='web'?'found on the web':''].filter(Boolean).join(' · '))+'</div></td>'+
         '<td class="mini">'+esc(r.business_type||'—')+'</td>'+
         '<td class="mini">'+esc((r.categories||[]).join(', ')||'—')+'</td>'+
         '<td class="mini">'+esc(r.payment_terms||'—')+'</td>'+
-        '<td class="num">'+(r.lead_time_days!=null?r.lead_time_days+'d':'—')+'</td>'+
+        '<td class="mini">'+(st.n?st.n+' file(s)':'—')+(st.expired?' <span class="pill p-red">'+st.expired+' expired</span>':'')+
+          (st.soon?' <span class="pill p-amber">'+st.soon+' expiring</span>':'')+'</td>'+
         '<td>'+pillSup(r.status)+'</td>'+
-        '<td class="num">'+(r.rating!=null?Number(r.rating).toFixed(1):'—')+'</td>'+
-        '<td class="num"><button class="ghost" data-act="supProducts" data-id="'+esc(r.id)+'" data-name="'+esc(r.name)+'">Products</button></td>'+
+        '<td class="num"><button class="ghost" data-act="openSupplier" data-id="'+esc(r.id)+'">Open</button></td>'+
       '</tr>'}).join('')+'</tbody></table>'
-     :'<div class="empty">No suppliers yet. Add the ones you already buy from, '+
-      'then their prices become the first real cost data in the system.</div>')+
+     :'<div class="empty">No suppliers yet. Import your vendor list from Odoo, or add the ones you buy from.</div>')+
     '</div>'+
-    '<div class="card"><div class="info"><b>Note on pricing.</b> Supplier costs live here in '+
-    '<code>adm_supplier_products</code> and are deliberately <b>never</b> written back into Modcraft\'s '+
-    'price database — that table feeds client quotations, and mixing selling prices with supplier '+
-    'costs in one table is exactly the kind of bug that is hard to unpick later.</div></div>';
+    '<div class="card"><div class="info"><b>Note on pricing.</b> Supplier costs are kept here and are <b>never</b> written into Modcraft\'s '+
+    'price database by themselves — that feeds client quotations, and mixing selling prices with supplier costs is hard to unpick later.</div></div>';
   VIEW(_vs).innerHTML=h;
 }
+var SUPS=[];
+function supStatusLabel(s){ return {prospect:'Prospect',accredited:'Accredited',preferred:'Preferred',suspended:'Suspended',blacklisted:'Blacklisted'}[s]||s||'—'; }
 function pillSup(s){
-  var m={preferred:'p-green',accredited:'p-blue',prospect:'p-grey',
-         suspended:'p-amber',blacklisted:'p-red'};
-  return '<span class="pill '+(m[s]||'p-grey')+'">'+esc(s||'—')+'</span>';
+  var m={preferred:'p-green',accredited:'p-blue',prospect:'p-grey',suspended:'p-amber',blacklisted:'p-red'};
+  return '<span class="pill '+(m[s]||'p-grey')+'">'+esc(supStatusLabel(s))+'</span>';
+}
+function supDocState(list){
+  var today=new Date().toISOString().slice(0,10), in30=new Date(Date.now()+30*86400000).toISOString().slice(0,10), o={n:list.length,expired:0,soon:0};
+  list.forEach(function(x){ if(!x.expires_on) return; if(x.expires_on<today) o.expired++; else if(x.expires_on<=in30) o.soon++; });
+  return o;
 }
 function filterSup(){
-  var q=el('supQ').value.toLowerCase();
+  var q=el('supQ').value.toLowerCase(), st=el('supSt')?el('supSt').value:'';
   Array.prototype.forEach.call(document.querySelectorAll('#supTbl tbody tr'),function(tr){
-    tr.style.display=tr.getAttribute('data-n').indexOf(q)>=0?'':'none'});
+    var ok=tr.getAttribute('data-n').indexOf(q)>=0&&(!st||(st==='docs'?tr.getAttribute('data-docs')==='1':tr.getAttribute('data-st')===st));
+    tr.style.display=ok?'':'none'});
 }
-function addSupplier(){
-  openModal('<h3>Add supplier</h3>'+
-    '<div class="grid g2">'+
-    '<div><label>Company name *</label><input id="sN"></div>'+
+var SUP_DOC_TYPES_EXTRA=['Bank certificate','PS licence (plywood)','TDS (technical data sheet)','SDS / MSDS (safety data sheet)',
+  'Certificate / test report','Catalogue / price list','Quotation','Other'];
+function supDocTypes(){
+  var c=(CACHE.cfg&&CACHE.cfg.value)||{}, req=c.accreditationDocs||['BIR 2303 (COR)','DTI / SEC registration',"Mayor's permit"];
+  return req.concat(SUP_DOC_TYPES_EXTRA.filter(function(x){return req.indexOf(x)<0}));
+}
+function supForm(r){
+  r=r||{};
+  return '<div class="grid g2">'+
+    '<div><label>Company name *</label><input id="sN" value="'+esc(r.name||'')+'"></div>'+
     '<div><label>Business type</label><select id="sT"><option value="">—</option>'+
-      '<option>manufacturer</option><option>distributor</option><option>trader</option>'+
-      '<option>importer</option></select></div>'+
-    '<div><label>Contact person</label><input id="sC"></div>'+
-    '<div><label>Phone</label><input id="sP"></div>'+
-    '<div><label>Email</label><input id="sE"></div>'+
-    '<div><label>Website</label><input id="sW"></div>'+
-    '<div><label>Payment terms</label><input id="sPay" placeholder="COD / 30 days"></div>'+
-    '<div><label>Lead time (days)</label><input id="sL" type="number"></div>'+
-    '<div><label>Status</label><select id="sS"><option>prospect</option><option>accredited</option>'+
-      '<option>preferred</option></select></div>'+
-    '<div><label>Rating (0–5)</label><input id="sR" type="number" step="0.1" min="0" max="5"></div>'+
+      ['manufacturer','distributor','trader','importer','retailer'].map(function(x){return '<option'+(r.business_type===x?' selected':'')+'>'+x+'</option>'}).join('')+'</select></div>'+
+    '<div><label>Contact person</label><input id="sC" value="'+esc(r.contact_person||'')+'"></div>'+
+    '<div><label>Phone</label><input id="sP" value="'+esc(r.contact_phone||'')+'"></div>'+
+    '<div><label>Email</label><input id="sE" value="'+esc(r.contact_email||'')+'"></div>'+
+    '<div><label>Website</label><input id="sW" value="'+esc(r.website||'')+'"></div>'+
+    '<div><label>TIN</label><input id="sTin" value="'+esc(r.tin||'')+'"></div>'+
+    '<div><label>VAT registered?</label><select id="sVat"><option value="">Not known</option><option value="true"'+(r.vat_registered===true?' selected':'')+'>Yes — VAT registered</option>'+
+      '<option value="false"'+(r.vat_registered===false?' selected':'')+'>No — non-VAT</option></select></div>'+
+    '<div><label>Payment terms</label><input id="sPay" placeholder="COD / 30 days" value="'+esc(r.payment_terms||'')+'"></div>'+
+    '<div><label>Lead time (days)</label><input id="sL" type="number" value="'+esc(r.lead_time_days!=null?r.lead_time_days:'')+'"></div>'+
+    '<div><label>City</label><input id="sCity" value="'+esc(r.city||'')+'"></div>'+
+    '<div><label>Minimum order (₱)</label><input id="sMin" type="number" value="'+esc(r.min_order!=null?r.min_order:'')+'"></div>'+
     '</div>'+
-    '<label>Address</label><input id="sA">'+
-    '<label>Categories (comma separated)</label><input id="sCat" placeholder="boards, laminates, hardware">'+
-    '<div class="row right" style="margin-top:14px">'+
-      '<button class="ghost" data-act="closeModal">Cancel</button>'+
-      '<button class="primary" id="okSup">Save</button></div>');
+    '<label>Address</label><input id="sA" value="'+esc(r.address||'')+'">'+
+    '<label>What they supply (comma separated)</label><input id="sCat" placeholder="boards, HPL, edge band, hardware, adhesive" value="'+esc((r.categories||[]).join(', '))+'">'+
+    '<label>Notes</label><input id="sNote" value="'+esc(r.notes||'')+'">';
+}
+function supFormRead(){
+  return {name:el('sN').value.trim(),business_type:el('sT').value||null,contact_person:el('sC').value||null,
+    contact_phone:el('sP').value||null,contact_email:el('sE').value||null,website:el('sW').value||null,
+    tin:el('sTin').value||null,vat_registered:el('sVat').value===''?null:el('sVat').value==='true',
+    payment_terms:el('sPay').value||null,lead_time_days:parseInt(el('sL').value)||null,city:el('sCity').value||null,
+    min_order:parseFloat(el('sMin').value)||null,address:el('sA').value||null,notes:el('sNote').value||null,
+    categories:el('sCat').value?el('sCat').value.split(',').map(function(x){return x.trim()}).filter(Boolean):[]};
+}
+function addSupplier(prefill){
+  openModal('<h3>Add supplier</h3><p class="sub">It starts as a prospect. Upload its papers, then an approver accredits it.</p>'+supForm(prefill)+
+    '<div class="row right" style="margin-top:14px"><button class="ghost" data-act="closeModal">Cancel</button>'+
+    '<button class="primary" id="okSup">Save</button></div>');
   el('okSup').onclick=async function(){
-    var name=el('sN').value.trim();
-    if(!name){toast('Company name is required.','err');return}
+    var v=supFormRead(); if(!v.name){toast('Company name is required.','err');return}
+    var dup=SUPS.filter(function(x){return (x.name||'').trim().toLowerCase()===v.name.toLowerCase()})[0];
+    if(dup){toast('"'+dup.name+'" is already on the list.','err');return}
     this.disabled=true;
-    var r=await supa.from('adm_suppliers').insert({
-      name:name,business_type:el('sT').value||null,contact_person:el('sC').value||null,
-      contact_phone:el('sP').value||null,contact_email:el('sE').value||null,
-      website:el('sW').value||null,payment_terms:el('sPay').value||null,
-      lead_time_days:parseInt(el('sL').value)||null,status:el('sS').value,
-      rating:parseFloat(el('sR').value)||null,address:el('sA').value||null,
-      categories:el('sCat').value?el('sCat').value.split(',').map(function(x){return x.trim()}).filter(Boolean):[],
-      source:'manual',created_by:ME.email});
+    v.status='prospect'; v.source=(prefill&&prefill.source)||'manual'; v.source_ref=(prefill&&prefill.source_ref)||null; v.created_by=ME.email;
+    var r=await supa.from('adm_suppliers').insert(v);
     closeModal();
     if(r.error){toast(errMsg(r.error),'err');return}
-    toast('Supplier added.','ok');render();
+    toast('Supplier added as a prospect.','ok');render();
   };
+}
+async function openSupplier(id){
+  var s=await supa.from('adm_suppliers').select('*').eq('id',id).maybeSingle();
+  if(s.error||!s.data){toast('Could not open the supplier: '+errMsg(s.error||'not found'),'err');return}
+  var r=s.data;
+  var d=await supa.from('adm_supplier_docs').select('*').eq('supplier_id',id).order('uploaded_at',{ascending:false});
+  var p=await supa.from('adm_supplier_products').select('id,item_name').eq('supplier_id',id).order('item_name');
+  var docs=d.data||[], prods=p.data||[], pn={}; prods.forEach(function(x){pn[x.id]=x.item_name});
+  var today=new Date().toISOString().slice(0,10), in30=new Date(Date.now()+30*86400000).toISOString().slice(0,10);
+  var req=((CACHE.cfg&&CACHE.cfg.value)||{}).accreditationDocs||['BIR 2303 (COR)','DTI / SEC registration',"Mayor's permit"];
+  var have=function(t){return docs.some(function(x){return x.doc_type===t&&!x.replaced_by&&(!x.expires_on||x.expires_on>=today)})};
+  openModal('<h3>'+esc(r.name)+' '+pillSup(r.status)+'</h3>'+
+    '<div class="mini">'+esc([r.business_type,r.city,r.contact_person,r.contact_phone,r.contact_email].filter(Boolean).join(' · ')||'No contact details yet')+
+      (r.website?' · <a href="'+esc(/^https?:/.test(r.website)?r.website:'https://'+r.website)+'" target="_blank" rel="noopener">website</a>':'')+'</div>'+
+    (r.accredited_by?'<div class="mini" style="margin-top:4px">Accredited by '+esc(r.accredited_by)+' · '+dt(r.accredited_at)+(r.accreditation_note?' · '+esc(r.accreditation_note):'')+'</div>':'')+
+    (r.status==='suspended'||r.status==='blacklisted'?'<div class="warn" style="margin-top:6px">'+esc(supStatusLabel(r.status))+(r.accreditation_note?': '+esc(r.accreditation_note):'')+'</div>':'')+
+    '<h4 style="margin:14px 0 6px">Accreditation papers</h4>'+
+    '<div class="row" style="flex-wrap:wrap;gap:6px">'+req.map(function(t){return '<span class="pill '+(have(t)?'p-green':'p-amber')+'">'+(have(t)?'✓ ':'Missing: ')+esc(t)+'</span>'}).join('')+'</div>'+
+    '<h4 style="margin:14px 0 6px">Documents</h4>'+
+    (docs.length?'<table><thead><tr><th>Type</th><th>File</th><th>Product</th><th>Issued</th><th>Expires</th><th></th></tr></thead><tbody>'+
+      docs.map(function(x){var exp=x.expires_on, cls=exp?(exp<today?'p-red':(exp<=in30?'p-amber':'p-green')):'';
+        return '<tr'+(x.replaced_by?' style="opacity:.5"':'')+'><td>'+esc(x.doc_type)+(x.replaced_by?' <span class="mini">(replaced)</span>':'')+'</td>'+
+          '<td class="mini"><a href="#" data-act="supDocOpen" data-path="'+esc(x.file_path)+'">'+esc(x.file_name||'open')+'</a>'+
+            (x.extracted&&x.extracted.key_specs?'<div>'+esc(String(x.extracted.key_specs).slice(0,120))+'</div>':'')+
+            (x.extracted&&x.extracted.formaldehyde_class?'<div>Formaldehyde: '+esc(x.extracted.formaldehyde_class)+'</div>':'')+
+            (x.extracted&&x.extracted.hazard_codes&&x.extracted.hazard_codes.length?'<div>Hazards: '+esc(x.extracted.hazard_codes.join(', '))+'</div>':'')+'</td>'+
+          '<td class="mini">'+esc(x.product_id?pn[x.product_id]||'':'')+'</td>'+
+          '<td class="mini">'+esc(x.issued_on||'—')+'</td>'+
+          '<td>'+(exp?'<span class="pill '+cls+'">'+esc(exp)+'</span>':'<span class="mini">—</span>')+'</td>'+
+          '<td class="mini">'+esc(x.notes||'')+'</td></tr>'}).join('')+'</tbody></table>'
+     :'<div class="empty">No documents yet.</div>')+
+    '<div class="row right" style="margin-top:14px;flex-wrap:wrap;gap:6px">'+
+      (ME.caps.can_source||ME.caps.can_approve?'<button data-act="supDocUpload" data-id="'+esc(id)+'"><i class="ti ti-upload"></i> Upload document</button>':'')+
+      '<button data-act="supProducts" data-id="'+esc(id)+'" data-name="'+esc(r.name)+'">Products &amp; prices</button>'+
+      (ME.caps.can_source?'<button data-act="supEdit" data-id="'+esc(id)+'">Edit details</button>':'')+
+      (ME.caps.can_approve?'<button class="primary" data-act="supStatus" data-id="'+esc(id)+'">Change status</button>':'')+
+      '<button class="ghost" data-act="closeModal">Close</button></div>');
+}
+async function supEdit(id){
+  var s=await supa.from('adm_suppliers').select('*').eq('id',id).maybeSingle(); var r=s.data||{};
+  openModal('<h3>Edit '+esc(r.name||'supplier')+'</h3>'+supForm(r)+
+    '<div class="row right" style="margin-top:14px"><button class="ghost" data-act="closeModal">Cancel</button><button class="primary" id="okSup">Save</button></div>');
+  el('okSup').onclick=async function(){
+    var v=supFormRead(); if(!v.name){toast('Company name is required.','err');return}
+    this.disabled=true;
+    var u=await supa.from('adm_suppliers').update(v).eq('id',id);
+    if(u.error){toast(errMsg(u.error),'err');this.disabled=false;return}
+    toast('Saved.','ok'); openSupplier(id); render();
+  };
+}
+function supStatus(id){
+  var r=SUPS.filter(function(x){return x.id===id})[0]||{};
+  openModal('<h3>Change status — '+esc(r.name||'')+'</h3>'+
+    '<label>New status</label><select id="ssS">'+['prospect','accredited','preferred','suspended','blacklisted'].map(function(x){
+      return '<option value="'+x+'"'+(x===r.status?' selected':'')+'>'+supStatusLabel(x)+'</option>'}).join('')+'</select>'+
+    '<label>Reason / note</label><textarea id="ssN" rows="2" placeholder="Required to suspend or blacklist, or to accredit with papers missing"></textarea>'+
+    '<div class="row right" style="margin-top:14px"><button class="ghost" data-act="closeModal">Cancel</button><button class="primary" id="ssOk">Continue</button></div>');
+  el('ssOk').onclick=function(){ var st=el('ssS').value, n=el('ssN').value.trim()||null; closeModal();
+    rpcPreview('adm_supplier_set_status',{p_supplier_id:id,p_status:st,p_note:n},'Supplier status — review',function(){ render(); openSupplier(id); }); };
+}
+function fileToB64(f){ return new Promise(function(ok,no){ var fr=new FileReader(); fr.onload=function(){ ok(String(fr.result).split(',')[1]||''); }; fr.onerror=no; fr.readAsDataURL(f); }); }
+async function ksAI(body){
+  var r=await supa.functions.invoke('keystone-ai',{body:body});
+  if(r.error){ var m=errMsg(r.error); try{ var j=await r.error.context.json(); if(j&&j.error) m=j.error; }catch(e){} throw new Error(m); }
+  return r.data&&r.data.data;
+}
+async function supDocUpload(id){
+  var p=await supa.from('adm_supplier_products').select('id,item_name').eq('supplier_id',id).order('item_name');
+  var prods=p.data||[];
+  openModal('<h3>Upload document</h3>'+
+    '<div class="grid g2"><div><label>Type</label><select id="dT">'+supDocTypes().map(function(t){return '<option>'+esc(t)+'</option>'}).join('')+'</select></div>'+
+    '<div><label>For product (optional)</label><select id="dP"><option value="">— the supplier itself —</option>'+
+      prods.map(function(x){return '<option value="'+esc(x.id)+'">'+esc(x.item_name)+'</option>'}).join('')+'</select></div></div>'+
+    '<label>File (PDF or image, up to 10 MB)</label><input id="dF" type="file" accept="application/pdf,image/*">'+
+    '<div class="row" style="margin-top:6px"><button class="ghost" id="dAI" style="font-size:12px"><i class="ti ti-sparkles"></i> Read the dates with AI</button><span class="mini" id="dAIs"></span></div>'+
+    '<div class="grid g2"><div><label>Issued on</label><input id="dI" type="date"></div><div><label>Expires on</label><input id="dE" type="date"></div></div>'+
+    '<label>Notes</label><input id="dN">'+
+    '<div class="row right" style="margin-top:14px"><button class="ghost" data-act="closeModal">Cancel</button><button class="primary" id="dOk">Upload</button></div>');
+  var extracted=null;
+  el('dAI').onclick=async function(){
+    var f=el('dF').files[0]; if(!f){toast('Choose the file first.','err');return}
+    if(f.size>8*1024*1024){toast('For AI reading the file must be 8 MB or less.','err');return}
+    this.disabled=true; el('dAIs').textContent='Reading…';
+    try{
+      var x=await ksAI({mode:'doc',doc_type:el('dT').value,file_b64:await fileToB64(f),media_type:f.type||'application/pdf'});
+      extracted=x||null;
+      if(x&&x.issued_on) el('dI').value=x.issued_on;
+      if(x&&x.expires_on) el('dE').value=x.expires_on;
+      var bits=[x&&x.product,x&&x.formaldehyde_class&&('formaldehyde '+x.formaldehyde_class),x&&x.fire_rating&&('fire '+x.fire_rating),
+        x&&x.hazard_codes&&x.hazard_codes.length&&('hazards '+x.hazard_codes.join(', '))].filter(Boolean);
+      el('dAIs').textContent=(bits.length?bits.join(' · ')+' — ':'')+'check the dates before saving.';
+      if(!el('dN').value&&x&&x.key_specs) el('dN').value=String(x.key_specs).slice(0,200);
+    }catch(e){ el('dAIs').textContent='Could not read it: '+errMsg(e); }
+    this.disabled=false;
+  };
+  el('dOk').onclick=async function(){
+    var f=el('dF').files[0]; if(!f){toast('Choose the file.','err');return}
+    if(f.size>10*1024*1024){toast('The file is over 10 MB.','err');return}
+    var t=el('dT').value;
+    if(/SDS|safety/i.test(t)&&!el('dI').value&&!(extracted&&extracted.revision_date)) toast('Tip: an SDS should show its revision date.','ok');
+    this.disabled=true;
+    var path=id+'/'+Date.now()+'_'+String(f.name).replace(/[^A-Za-z0-9._-]+/g,'_').slice(-80);
+    var up=await supa.storage.from('keystone-supplier-docs').upload(path,f,{upsert:false,contentType:f.type||undefined});
+    if(up.error){toast('Upload failed: '+errMsg(up.error),'err');this.disabled=false;return}
+    // an earlier current document of the same type (and product) is kept, marked as replaced
+    var ins=await supa.from('adm_supplier_docs').insert({supplier_id:id,product_id:el('dP').value||null,doc_type:t,file_path:path,file_name:f.name,
+      issued_on:el('dI').value||null,expires_on:el('dE').value||null,notes:el('dN').value||null,extracted:extracted}).select('id').single();
+    if(ins.error){toast(errMsg(ins.error),'err');this.disabled=false;return}
+    var old=supa.from('adm_supplier_docs').update({replaced_by:ins.data.id}).eq('supplier_id',id).eq('doc_type',t).is('replaced_by',null).neq('id',ins.data.id);
+    old=el('dP').value?old.eq('product_id',el('dP').value):old.is('product_id',null);
+    await old;
+    toast('Document saved.','ok'); openSupplier(id); render();
+  };
+}
+async function supDocOpen(path){
+  var r=await supa.storage.from('keystone-supplier-docs').createSignedUrl(path,3600);
+  if(r.error){toast(errMsg(r.error),'err');return}
+  window.open(r.data.signedUrl,'_blank','noopener');
+}
+/* Import the vendor list exported from Odoo (Purchase → Vendors → select all → Export → Excel).
+   Columns are found by their names, so the export layout can vary. New vendors come in as prospects. */
+function loadXLSX(){ return window.XLSX?Promise.resolve():new Promise(function(ok,no){ var s=document.createElement('script');
+  s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=ok; s.onerror=function(){no(new Error('Could not load the Excel reader.'))}; document.head.appendChild(s); }); }
+function importSuppliers(){
+  openModal('<h3>Import suppliers from Odoo</h3>'+
+    '<p class="sub">In Odoo: <b>Purchase → Orders → Vendors</b>, select all, <b>Action → Export</b>, tick the fields you want '+
+    '(Name, Phone, Email, Tax ID, Street, City, Website, Vendor Payment Terms), and save as Excel. Then choose the file here.</p>'+
+    '<input id="iF" type="file" accept=".xlsx,.xls,.csv">'+
+    '<div class="row right" style="margin-top:14px"><button class="ghost" data-act="closeModal">Cancel</button><button class="primary" id="iOk">Read file</button></div>');
+  el('iOk').onclick=async function(){
+    var f=el('iF').files[0]; if(!f){toast('Choose the exported file.','err');return}
+    this.disabled=true;
+    try{
+      await loadXLSX();
+      var wb=XLSX.read(await f.arrayBuffer(),{type:'array'}), ws=wb.Sheets[wb.SheetNames[0]];
+      var aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+      var rows=supParseOdoo(aoa);
+      if(!rows.length){toast('No vendor names found. Make sure the export includes the Name column.','err');this.disabled=false;return}
+      closeModal();
+      rpcPreview('adm_supplier_import',{p_rows:rows},'Import '+rows.length+' supplier row(s) from Odoo — review');
+    }catch(e){toast(errMsg(e),'err');this.disabled=false;}
+  };
+}
+function supParseOdoo(aoa){
+  if(!aoa||!aoa.length) return [];
+  var H=aoa[0].map(function(h){return String(h||'').toLowerCase().trim()});
+  function col(re,not){ for(var i=0;i<H.length;i++){ if(re.test(H[i])&&!(not&&not.test(H[i]))) return i; } return -1; }
+  var c={ref:col(/^(external )?id$|external id/),name:col(/^(display )?name$|company name|^vendor$/,/contact|salesperson|payment/),
+    phone:col(/^phone/),mobile:col(/mobile/),email:col(/e-?mail/),tin:col(/tax id|^vat$|^tin/),street:col(/^street$|street/),
+    street2:col(/street2|street 2/),city:col(/^city/),country:col(/^country/),web:col(/website/),
+    terms:col(/payment term/),contact:col(/contact person|^contact$/),tags:col(/tags|categor/)};
+  if(c.name<0) c.name=0;
+  var out=[];
+  aoa.slice(1).forEach(function(r){
+    var g=function(k){return c[k]>=0?String(r[c[k]]||'').trim():''};
+    var nm=g('name'); if(!nm) return;
+    out.push({name:nm,odoo_ref:g('ref'),contact_phone:g('phone')||g('mobile'),contact_email:g('email'),tin:g('tin'),
+      address:[g('street'),g('street2')].filter(Boolean).join(', '),city:g('city'),country:g('country'),website:g('web'),
+      payment_terms:g('terms'),contact_person:g('contact'),
+      categories:g('tags')?g('tags').split(/[,;]/).map(function(x){return x.trim()}).filter(Boolean):[]});
+  });
+  return out;
+}
+/* Find suppliers on the web. Results are candidates only — adding one makes a prospect, never accredited. */
+function findSuppliers(){
+  openModal('<h3>Find suppliers on the web</h3>'+
+    '<p class="sub">Searches the web for businesses that sell what you need. Each search costs a little AI usage. '+
+    'What it finds is a lead to check — add it as a prospect, then get its papers.</p>'+
+    '<div class="grid g2"><div><label>What do you need?</label><input id="fQ" placeholder="e.g. 18mm marine plywood, PVC edge band, soft-close hinges"></div>'+
+    '<div><label>Where</label><input id="fL" value="Metro Manila"></div></div>'+
+    '<div class="row right" style="margin-top:10px"><button class="ghost" data-act="closeModal">Close</button><button class="primary" id="fGo"><i class="ti ti-search"></i> Search</button></div>'+
+    '<div id="fRes" style="margin-top:12px"></div>');
+  el('fGo').onclick=async function(){
+    var q=el('fQ').value.trim(); if(!q){toast('Say what you need.','err');return}
+    this.disabled=true; el('fRes').innerHTML='<div class="empty">Searching the web… this takes up to a minute.</div>';
+    try{
+      var x=await ksAI({mode:'search',query:q,location:el('fL').value.trim()||'Philippines'});
+      var list=(x&&x.suppliers)||[]; FOUND=list;
+      var known={}; SUPS.forEach(function(s){known[(s.name||'').trim().toLowerCase()]=1});
+      el('fRes').innerHTML=list.length?'<table><thead><tr><th>Business</th><th>Sells</th><th>Contact</th><th></th></tr></thead><tbody>'+
+        list.map(function(s,i){var on=known[(s.name||'').trim().toLowerCase()];
+          return '<tr><td><b>'+esc(s.name||'')+'</b><div class="mini">'+esc([s.address,s.city].filter(Boolean).join(', '))+'</div>'+
+            (s.source_url?'<div class="mini"><a href="'+esc(s.source_url)+'" target="_blank" rel="noopener">where it was found</a></div>':'')+'</td>'+
+            '<td class="mini">'+esc(s.products||'')+'<div>'+esc(s.business_type||'')+'</div></td>'+
+            '<td class="mini">'+esc([s.phone,s.email].filter(Boolean).join(' · '))+(s.website?'<div><a href="'+esc(/^https?:/.test(s.website)?s.website:'https://'+s.website)+'" target="_blank" rel="noopener">website</a></div>':'')+'</td>'+
+            '<td class="num">'+(on?'<span class="mini">already listed</span>':'<button class="ghost" data-act="addFound" data-i="'+i+'">Add as prospect</button>')+'</td></tr>'}).join('')+'</tbody></table>'+
+          (x.notes?'<p class="mini">'+esc(x.notes)+'</p>':'')
+        :'<div class="empty">Nothing found. Try other words or a wider area.</div>';
+    }catch(e){ el('fRes').innerHTML='<div class="warn">Search failed: '+esc(errMsg(e))+'</div>'; }
+    this.disabled=false;
+  };
+}
+var FOUND=[];
+function addFound(i){
+  var s=FOUND[+i]||{};
+  addSupplier({name:s.name,address:s.address,city:s.city,contact_phone:s.phone,contact_email:s.email,website:s.website,
+    business_type:/^(manufacturer|distributor|trader|importer|retailer)$/.test(s.business_type||'')?s.business_type:'',
+    categories:s.products?[s.products]:[],notes:s.source_url?'Found on the web: '+s.source_url:'',source:'web',source_ref:s.source_url||null});
 }
 async function supProducts(id,name){
   var q=await supa.from('adm_supplier_products').select('*').eq('supplier_id',id).order('item_name');
