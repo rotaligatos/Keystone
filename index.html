@@ -315,6 +315,7 @@ var ACTIONS={
   vouch:function(d){vouch(d.gate)},
   buildMR:function(d){buildMR(d.gate)},
   release:function(d){release(d.gate)},
+  setReleasePeople:function(d){setReleasePeople(d.people)},
   prLines:function(d){prLines(d.id)},
   submitPR:function(d){submitPR(d.id)},
   approvePR:function(d){decidePR(d.id,true)},
@@ -531,12 +532,12 @@ var GROUPS=[
   {k:'wh',    t:'Warehouse',     i:'ti-package',       leaves:[['mr','Material requests'],['boards','Extra board requests']]},
   // Rommel 2026-09-28: read-only view of HATID (logistics). Signing stays in HATID.
   {k:'logi',  t:'Logistics',     i:'ti-truck-delivery',leaves:[['lg_live','Today'],['lg_pickup','Pick-ups'],['lg_sched','Delivery schedules'],['lg_map','Map'],['lg_msgs','Client messages']]},
-  {k:'more',  t:'More',          i:'ti-dots',          leaves:[['prov','Plant & HRIS']]}
+  {k:'more',  t:'More',          i:'ti-dots',          leaves:[['prov','Plant & HRIS'],['kset','Settings']]}
 ];
 var LAST={};
 function groupOf(leaf){for(var i=0;i<GROUPS.length;i++){if(GROUPS[i].leaves.some(function(l){return l[0]===leaf}))return GROUPS[i]}return GROUPS[0]}
 function _badge(n){return n?' <span class="tabcount">'+n+'</span>':''}
-function leafOk(l){return !(l[0]==='lg_msgs'&&LG.me&&!LG.me.messages)}
+function leafOk(l){return !(l[0]==='lg_msgs'&&LG.me&&!LG.me.messages)&&!(l[0]==='kset'&&!(ME.caps&&ME.caps.adminTier))}
 function drawTabs(){
   var g=groupOf(TAB);
   el('tabs').innerHTML=GROUPS.map(function(G){
@@ -680,7 +681,8 @@ function render(){
   var fn = TAB==='review'?viewReview : TAB==='appr'?viewApprovals : TAB==='po'?viewPO
          : TAB==='queue'?viewQueue : TAB==='src'?viewSourcing
          : TAB==='mr'?viewMR : TAB==='boards'?viewBoardReqs : TAB==='dash'?viewDash
-         : TAB==='lg_live'?viewLgLive : TAB==='lg_pickup'?viewLgPickup : TAB==='lg_sched'?viewLgSched : TAB==='lg_map'?viewLgMap : TAB==='lg_msgs'?viewLgMsgs : viewProv;
+         : TAB==='lg_live'?viewLgLive : TAB==='lg_pickup'?viewLgPickup : TAB==='lg_sched'?viewLgSched : TAB==='lg_map'?viewLgMap : TAB==='lg_msgs'?viewLgMsgs
+         : TAB==='kset'?viewSettings : viewProv;
   if(!/^lg_/.test(TAB)) clearInterval(_lgTimer);
   // A screen that fails must say why. Silence here reads as "the app is broken".
   // After an action the screen re-renders; stay where the person was instead of jumping to the top.
@@ -1003,12 +1005,38 @@ function buildMR(gid){
     'Build material requests — review');
 }
 
+/* Release approval: two people (default — whoever opened the gate cannot also release it) or one
+   person (small team). Set in More › Settings by an Admin/Director; enforced in adm_release_gate. */
+var RELEASE_PEOPLE='two';
+async function loadReleasePeople(){
+  try{ var r=await supa.rpc('adm_release_people'); if(!r.error&&r.data) RELEASE_PEOPLE=r.data; }catch(e){}
+  return RELEASE_PEOPLE;
+}
+async function viewSettings(){
+  var _vs=render._seq;
+  if(!(ME.caps&&ME.caps.adminTier)){ VIEW(_vs).innerHTML='<div class="card"><h3>Settings</h3><p class="sub">Only an Admin or Director can change KEYSTONE settings.</p></div>'; return; }
+  var p=await loadReleasePeople();
+  var opt=function(v,t,s){ return '<label style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid '+(p===v?'var(--accent,#5b8def)':'var(--line,#333)')+';border-radius:10px;margin-bottom:8px;cursor:pointer">'
+    +'<input type="radio" name="relp" '+(p===v?'checked':'')+' data-act="setReleasePeople" data-people="'+v+'" style="margin-top:3px">'
+    +'<div><b>'+t+'</b><div class="sub" style="margin:2px 0 0">'+s+'</div></div></label>'; };
+  VIEW(_vs).innerHTML='<div class="card"><h3>Release approval</h3>'
+    +'<p class="sub">Who may unlock the material request and Job Order for production. Choose to match the people you have. Every change is recorded.</p>'
+    +opt('two','Two people','The person who opens the payment gate cannot also release it. An Admin/Director may still do both with a written reason (recorded as an override).')
+    +opt('one','One person','The same person may open the gate and release it, with no override reason. Payment and every other check still apply.')
+    +'</div>';
+}
+async function setReleasePeople(p){
+  if(p===RELEASE_PEOPLE) return;
+  var r=await supa.rpc('adm_set_release_people',{p_people:p});
+  if(r.error){ alert('Could not change it: '+r.error.message); render(); return; }
+  RELEASE_PEOPLE=p; render();
+}
 function release(gid){
   var go_=function(reason){rpcPreview('adm_release_gate',{p_gate_id:gid,p_override_reason:reason||null},'Unlock material request + Job Order — review')};
   // Segregation of duties: whoever opened the gate may not release it, except an Admin/Director with a
   // written reason. Ask only when it applies.
   var r=(QROWS||[]).filter(function(x){return x.gate_id===gid})[0]||{};
-  if(ME.caps.adminTier&&(r.gate_created_by||'').toLowerCase()===ME.email)
+  if(RELEASE_PEOPLE!=='one'&&ME.caps.adminTier&&(r.gate_created_by||'').toLowerCase()===ME.email)
     return askText('You opened this gate yourself','Override reason',true,go_,
       {sub:'The person who opened a gate normally cannot also release it. As Admin/Director you may, with a reason — it is recorded as an override.',ok:'Continue to review'});
   go_(null);
@@ -2376,6 +2404,7 @@ supa.auth.onAuthStateChange(function(){refreshUser()});
 (async function(){
   var c=await supa.from('adm_settings').select('*').eq('key','CONFIG').maybeSingle();
   CACHE.cfg=c.data;
+  loadReleasePeople();
   refreshUser();
 })();
 
