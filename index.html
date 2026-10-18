@@ -864,11 +864,33 @@ function drawQueueList(){
       .join(' ').toLowerCase();
     return words.every(function(w){return hay.indexOf(w)>=0});
   });
+  loadOutsCounts(list.filter(function(r){return !r.pr_no}).map(function(r){return r.serial}));
   box.innerHTML=(list.length?list.map(gateCard).join(''):
     '<div class="empty">'+(QROWS.some(function(r){return r.fq_client_approved&&(QF.tab==='all'||qfTabOf(r)===QF.tab)})?'Nothing matches the search.':'Nothing here yet.')+'</div>')+
     '<div class="mini" style="margin-top:6px">'+list.length+' shown</div>';
 }
 
+/* Generate PR is greyed out when the quotation has nothing to buy in (Rommel, 2026-10-18).
+   OUTS[serial] = {n: outsource item count, problem: why it could not be read}; unknown = enabled. */
+var OUTS={};
+function prBtnHtml(serial){
+  var o=OUTS[serial], dis=false, tip='Purchase request for the outsource items on this quotation';
+  if(o&&o.problem){ dis=true; tip='Cannot read this quotation\'s materials: '+o.problem; }
+  else if(o&&o.n===0){ dis=true; tip='No outsource materials or hardware on this quotation — nothing to purchase'; }
+  return '<button class="ghost" id="prbtn-'+esc(serial)+'" data-act="genPR" data-serial="'+esc(serial)+'"'+(dis?' disabled':'')+
+    ' style="padding:3px 10px;font-size:12px" title="'+esc(tip)+'"><i class="ti ti-file-plus"></i> Generate PR'+
+    (o&&o.n>0?' ('+o.n+')':'')+'</button>';
+}
+async function loadOutsCounts(serials){
+  var need=serials.filter(function(s){return !OUTS[s]});
+  if(!need.length) return;
+  var r=await supa.rpc('adm_outsource_counts',{p_serials:need});
+  if(r.error) return;   // leave the buttons enabled; Generate PR itself still refuses with a reason
+  (r.data||[]).forEach(function(x){
+    OUTS[x.serial]={n:x.n,problem:x.problem};
+    var b=el('prbtn-'+x.serial); if(b) b.outerHTML=prBtnHtml(x.serial);
+  });
+}
 function kpi(lbl,val,hint){
   return '<div class="kpi"><div class="lbl">'+esc(lbl)+'</div>'+
     '<div class="val">'+esc(String(val))+'</div>'+
@@ -888,8 +910,7 @@ function gateCard(r){
         (r.jo_number?'<span class="pill p-grey">Job Order '+esc(r.jo_number)+'</span>':''))+
       '<div class="spacer" style="flex:1"></div>'+
       (r.pr_no?'<span class="pill p-grey">PR '+esc(r.pr_no)+'</span>'+pill(r.pr_status)
-        :'<button class="ghost" data-act="genPR" data-serial="'+esc(r.serial)+'" style="padding:3px 10px;font-size:12px" title="Purchase request for the outsource items on this quotation">'+
-          '<i class="ti ti-file-plus"></i> Generate PR</button>')+
+        :prBtnHtml(r.serial))+
       '<button class="ghost" data-act="viewQuote" data-serial="'+esc(r.serial)+'" style="padding:3px 10px;font-size:12px">'+
         '<i class="ti ti-file-text"></i> View quotation</button>'+
       '<b>'+money(r.total)+'</b></div>'+
