@@ -287,7 +287,7 @@ function errMsg(e){
   return m.replace(/^.*?ERROR:\s*[A-Z0-9]+:\s*/,'');
 }
 function closeModal(){el('modal').classList.remove('on');el('modalBox').innerHTML='';el('modalBox').style.cssText=''}
-function openModal(html){el('modalBox').innerHTML=html;el('modal').classList.add('on')}
+function openModal(html){el('modalBox').style.cssText='';el('modalBox').innerHTML=html;el('modal').classList.add('on')}
 // Close on the backdrop only when the press STARTED on the backdrop. Selecting text in a field and
 // releasing outside the window used to count as a backdrop click and throw the form away.
 var _modalDownOnBackdrop=false;
@@ -344,12 +344,13 @@ var ACTIONS={
   delLine:function(d){delLine(d.id,d.pr)},
   apprPR:function(d){apprPR(d.id,true)},
   rejPR:function(d){apprPR(d.id,false)},
-  apprPO:function(d){apprPO(d.id,true)},
-  rejPO:function(d){apprPO(d.id,false)},
-  newPO:function(d){newPO(d.id)},
-  openPO:function(d){openPO(d.id)},
-  submitPO:function(d){submitPO(d.id)},
-  issuePO:function(d){issuePO(d.id)},
+  recOdoo:function(d){recOdoo(d.pr,d.sup)},
+  printOdoo:function(d){printOdoo(d.id)},
+  openCanvass:function(d){openCanvass(d.id)},
+  quoteForm:function(d){quoteForm(d.pr,d.q)},
+  quoteFile:function(d){quoteFile(d.path)},
+  quoteDel:function(d){quoteDel(d.q)},
+  awardOffer:function(d){awardOffer(d.line,d.o)},
   closeModal:function(){closeModal()},
   mrPhoto:function(d){mrPhoto(d.id)},
   reload:function(){location.reload()},
@@ -545,7 +546,7 @@ function previewSummary(fn,d){
 var GROUPS=[
   {k:'dash',  t:'Dashboard',     i:'ti-chart-bar',     leaves:[['dash','Dashboard']]},
   {k:'queue', t:'Payment & Release', i:'ti-lock-open',     leaves:[['queue','Payment & Release']]},
-  {k:'purch', t:'Purchasing',    i:'ti-file-dollar',   leaves:[['review','My requests'],['appr','Approvals'],['po','Purchase orders'],['src','Suppliers']]},
+  {k:'purch', t:'Purchasing',    i:'ti-file-dollar',   leaves:[['review','My requests'],['appr','Approvals'],['po','Ready for Odoo'],['src','Suppliers']]},
   {k:'wh',    t:'Warehouse',     i:'ti-package',       leaves:[['mr','Material requests'],['boards','Extra board requests']]},
   // Rommel 2026-09-28: read-only view of HATID (logistics). Signing stays in HATID.
   {k:'logi',  t:'Logistics',     i:'ti-truck-delivery',leaves:[['lg_live','Today'],['lg_pickup','Pick-ups'],['lg_sched','Delivery schedules'],['lg_map','Map'],['lg_msgs','Client messages']]},
@@ -581,7 +582,7 @@ async function refreshNeeds(force){
     var q=await Promise.all([
       supa.from('adm_v_release_queue').select('serial,fq_client_approved,gate_id,gate_status').limit(1000),
       supa.from('adm_purchase_requests').select('id,status,requested_by,signed_by,quotation_serial').limit(1000),
-      supa.from('adm_purchase_orders').select('id,status').limit(1000),
+      Promise.resolve({data:[]}),   // purchase orders are made in Odoo now
       supa.from('adm_material_requests').select('id,status').in('status',['authorized','partially_issued']).limit(1000),
       supa.from('pmes_board_requests').select('id,status').in('status',['sent_to_keystone','escalated']).limit(500)
     ]);
@@ -594,8 +595,8 @@ async function refreshNeeds(force){
       ready_to_release: c.can_release?fq.filter(function(r){return r.gate_status==='paid'||r.gate_status==='vouched'}).length:0,
       my_drafts: prs.filter(function(r){return r.status==='draft'&&(r.requested_by||'').toLowerCase()===ME.email}).length,
       pr_to_approve: prs.filter(function(r){return !mine(r)&&((r.status==='pending_manager'&&c.is_manager_approver)||(r.status==='pending_hpo'&&c.is_hpo_approver))}).length,
-      po_to_approve: pos.filter(function(o){return (o.status==='pending_hpo'&&c.is_hpo_approver)||(o.status==='pending_md'&&c.is_md_approver)}).length,
-      po_to_act: c.can_source?pos.filter(function(o){return o.status==='draft'||o.status==='approved'}).length+prs.filter(function(r){return r.status==='approved'}).length:0,
+      po_to_approve: 0,
+      po_to_act: c.can_source?prs.filter(function(r){return r.status==='approved'}).length:0,
       mr_to_process: c.can_issue?mrs.length:0,
       boards_to_decide: brs.filter(function(r){return (r.status==='sent_to_keystone'&&(c.can_issue||c.can_release))||(r.status==='escalated'&&c.is_plant_head)}).length
     };
@@ -1281,7 +1282,8 @@ async function viewReview(){
   var h='<div class="card"><h3>My Purchase Requests</h3>'+
     '<p class="sub">Outsource materials and hardware pulled from approved quotations. '+
     'Review them here — adjust quantities, merge duplicate items, pull in other jobs, '+
-    'drop what you don\'t need — then sign. <b>Nothing you do here touches the quotation</b>, '+
+    'drop what you don\'t need, then open <b>Canvass</b> to get supplier quotes and choose a supplier for each line — then sign. '+
+    'After approval the purchase order is made in Odoo. <b>Nothing you do here touches the quotation</b>, '+
     'so a locked project total can never change.</p>'+
     '<div class="grid g4">'+
       kpi('Drafts to review',drafts.length,'waiting for you')+
@@ -1330,6 +1332,9 @@ async function openPR(id){
   var p=pr.data||{}, rows=ln.data||[];
   var draft=(p.status==='draft');
   var srcs={}; rows.forEach(function(l){if(l.src_ref)srcs[l.src_ref]=1});
+  var cs=rows.map(function(l){return l.chosen_supplier_id}).filter(Boolean), SN={};
+  if(cs.length){ var sq=await supa.from('adm_suppliers').select('id,name').in('id',cs); (sq.data||[]).forEach(function(x){SN[x.id]=x.name}); }
+  var unawarded=rows.filter(function(l){return !l.awarded_offer_id}).length;
   var jobs=Object.keys(srcs);
 
   openModal('<h3>'+esc(p.pr_no||'Request')+' '+pill(p.status)+'</h3>'+
@@ -1344,9 +1349,11 @@ async function openPR(id){
     (draft?'<div class="row" style="margin:10px 0">'+
       '<button data-act="consolidatePR" data-id="'+esc(id)+'"><i class="ti ti-arrows-join"></i> Merge duplicate items</button>'+
       '<button data-act="addQuotation" data-id="'+esc(id)+'"><i class="ti ti-plus"></i> Add another job</button>'+
-      '</div>':'')+
+      '<button class="primary" data-act="openCanvass" data-id="'+esc(id)+'"><i class="ti ti-scale"></i> Canvass — quotes &amp; choose suppliers</button>'+
+      '</div>':'<div class="row" style="margin:10px 0"><button data-act="openCanvass" data-id="'+esc(id)+'"><i class="ti ti-scale"></i> View canvass</button></div>')+
+    (draft&&rows.length&&unawarded?'<div class="warn">'+unawarded+' line(s) still need a supplier chosen in the canvass before you can sign.</div>':'')+
     '<table><thead><tr><th>#</th><th>Item</th><th>Unit</th><th class="num">Qty</th>'+
-    '<th class="num">Est. price</th><th class="num">Amount</th>'+(draft?'<th></th>':'')+
+    '<th class="num">Budget price</th><th class="num">Amount</th><th>Chosen supplier</th>'+(draft?'<th></th>':'')+
     '</tr></thead><tbody>'+
     (rows.length?rows.map(function(l){
       return '<tr><td>'+num(l.line_no)+'</td>'+
@@ -1355,19 +1362,20 @@ async function openPR(id){
         '<td class="num">'+num(l.qty)+'</td>'+
         '<td class="num">'+money(l.est_price)+'</td>'+
         '<td class="num">'+money(l.est_amount)+'</td>'+
+        '<td class="mini">'+(l.chosen_supplier_id?'<b>'+esc(SN[l.chosen_supplier_id]||'')+'</b><br>'+money(l.awarded_price)+' w/o VAT'+(l.award_reason?'<br>'+esc(l.award_reason):''):'—')+'</td>'+
         (draft?'<td class="num" style="white-space:nowrap">'+
           '<button class="ghost" data-act="editLine" data-id="'+esc(l.id)+'" data-pr="'+esc(id)+'">Edit</button> '+
           '<button class="ghost" data-act="delLine" data-id="'+esc(l.id)+'" data-pr="'+esc(id)+'">Remove</button></td>':'')+
         '</tr>'}).join('')
-      :'<tr><td colspan="7"><div class="empty">No lines.</div></td></tr>')+
+      :'<tr><td colspan="8"><div class="empty">No lines.</div></td></tr>')+
     '</tbody></table>'+
-    '<div class="row right" style="margin-top:12px"><b>Total '+money(p.est_total)+'</b></div>'+
+    '<div class="row right" style="margin-top:12px"><b>Budget '+money(p.est_total)+'</b>'+(p.awarded_total!=null?'<span style="margin-left:14px">Chosen suppliers <b>'+money(p.awarded_total)+'</b> w/o VAT</span>':'')+'</div>'+
     (p.signed_by?'<div class="mini" style="margin-top:8px">Signed by '+esc(p.signed_by)+' on '+dt(p.signed_at)+'</div>':'')+
     (p.manager_approved_by?'<div class="mini">Manager approved by '+esc(p.manager_approved_by)+' on '+dt(p.manager_approved_at)+'</div>':'')+
     (p.hpo_approved_by?'<div class="mini">Head of Plant Ops approved by '+esc(p.hpo_approved_by)+' on '+dt(p.hpo_approved_at)+'</div>':'')+
     '<div class="row right" style="margin-top:14px">'+
       '<button data-act="closeModal">Close</button>'+
-      (draft&&rows.length?'<button class="primary" data-act="signPR" data-id="'+esc(id)+'">'+
+      (draft&&rows.length&&!unawarded?'<button class="primary" data-act="signPR" data-id="'+esc(id)+'">'+
         '<i class="ti ti-writing-sign"></i> Sign &amp; send to Manager</button>':'')+
     '</div>');
 }
@@ -1416,66 +1424,47 @@ async function viewApprovals(){
   VIEW(_vs).innerHTML='<div class="empty">Loading approvals…</div>';
   var pq=await supa.from('adm_purchase_requests').select('*')
     .in('status',['pending_manager','pending_hpo']).order('signed_at');
-  var oq=await supa.from('adm_purchase_orders').select('*')
-    .in('status',['pending_hpo','pending_md']).order('created_at');
   if(pq.error)throw pq.error;
-  var prs=pq.data||[], pos=oq.data||[];
+  var prs=pq.data||[];
   var isMgr=!!ME.caps.is_manager_approver, isHpo=!!ME.caps.is_hpo_approver, isMd=!!ME.caps.is_md_approver;
 
   var mineP=prs.filter(function(r){
     return (r.status==='pending_manager'&&isMgr)||(r.status==='pending_hpo'&&isHpo)});
-  var mineO=pos.filter(function(o){
-    return (o.status==='pending_hpo'&&isHpo)||(o.status==='pending_md'&&isMd)});
 
-  var role=[isMgr?'Manager':null,isHpo?'Head of Plant Operations':null,
-            isMd?'Managing Director':null].filter(Boolean).join(' · ')||'no approval role';
+  var role=[isMgr?'Manager':null,isHpo?'Head of Plant Operations':null].filter(Boolean).join(' · ')||'no approval role';
 
   var h='<div class="card"><h3>Approvals</h3>'+
     '<p class="sub">You are signed in as <b>'+esc(role)+'</b>. '+
-    'You cannot approve a request you raised or signed yourself.</p>'+
+    'You cannot approve a request you raised or signed yourself. Open <b>Canvass</b> to see the quotes and why each supplier was chosen. '+
+    'Purchase orders are made in Odoo after approval.</p>'+
     '<div class="grid g4">'+
       kpi('Requests for you',mineP.length,'awaiting your decision')+
-      kpi('Purchase orders for you',mineO.length,'awaiting your decision')+
       kpi('All requests in flight',prs.length,'across the company')+
-      kpi('All orders in flight',pos.length,'across the company')+
     '</div></div>';
 
   h+='<div class="card">'+listBar('appr','Search request, order, job, client…')+'<div class="mini" data-lfn="appr"></div></div>';
   h+='<div data-lft="appr"><div class="card"><h3>Purchase requests</h3>'+
     (mineP.length?'<table><thead><tr><th>Request</th><th>Job</th><th>Raised by</th>'+
-      '<th class="num">Value</th><th>Stage</th><th></th></tr></thead><tbody>'+
+      '<th class="num">Budget</th><th class="num">Chosen suppliers</th><th>Stage</th><th></th></tr></thead><tbody>'+
       mineP.map(function(r){
         var own=((r.requested_by||'').toLowerCase()===ME.email)||((r.signed_by||'').toLowerCase()===ME.email);
         return '<tr'+rowAttrs([r.pr_no,r.quotation_serial,r.signed_by,r.requested_by],r.company)+'><td><b>'+esc(r.pr_no)+'</b></td>'+
           '<td>'+esc(r.quotation_serial||'combined')+qLabel(r.quotation_serial)+'</td>'+
           '<td class="mini">'+esc(r.signed_by||r.requested_by||'')+'</td>'+
           '<td class="num">'+money(r.est_total)+'</td>'+
+          '<td class="num">'+(r.awarded_total!=null?money(r.awarded_total)+'<div class="mini">without VAT'+
+            (Number(r.awarded_total)>Number(r.est_total)?' · <span style="color:#b91c1c">over budget</span>':'')+'</div>':'—')+'</td>'+
           '<td>'+pill(r.status)+'</td>'+
           '<td class="num" style="white-space:nowrap">'+
             '<button class="ghost" data-act="openPR" data-id="'+esc(r.id)+'">Lines</button> '+
+            '<button class="ghost" data-act="openCanvass" data-id="'+esc(r.id)+'">Canvass</button> '+
             (own?'<span class="mini">your own request</span>'
                 :'<button class="primary" data-act="apprPR" data-id="'+esc(r.id)+'">Approve</button> '+
                  '<button class="danger" data-act="rejPR" data-id="'+esc(r.id)+'">Reject</button>')+
           '</td></tr>'}).join('')+'</tbody></table>'
      :'<div class="empty">Nothing waiting for your decision.</div>')+'</div>';
 
-  h+='<div class="card"><h3>Purchase orders</h3>'+
-    '<p class="sub">A purchase order of <b>'+poLimitTxt()+' or more</b> needs the Managing Director '+
-    'as well as the Head of Plant Operations.</p>'+
-    (mineO.length?'<table><thead><tr><th>Order</th><th class="num">Value</th><th>Stage</th>'+
-      '<th>Notes</th><th></th></tr></thead><tbody>'+
-      mineO.map(function(o){
-        return '<tr'+rowAttrs([o.po_no,o.status],o.company)+'><td><b>'+esc(o.po_no||'—')+'</b></td>'+
-          '<td class="num">'+money(o.total)+'</td>'+
-          '<td>'+pill(o.status)+'</td>'+
-          '<td>'+(o.split_flag?'<span class="pill p-amber">split</span> <span class="mini">'+
-                  esc(o.split_note||'')+'</span>':'<span class="mini">—</span>')+'</td>'+
-          '<td class="num" style="white-space:nowrap">'+
-            '<button class="ghost" data-act="openPO" data-id="'+esc(o.id)+'">Lines</button> '+
-            '<button class="primary" data-act="apprPO" data-id="'+esc(o.id)+'">Approve</button> '+
-            '<button class="danger" data-act="rejPO" data-id="'+esc(o.id)+'">Reject</button>'+
-          '</td></tr>'}).join('')+'</tbody></table>'
-     :'<div class="empty">Nothing waiting for your decision.</div>')+'</div></div>';
+  h+='</div>';
   VIEW(_vs).innerHTML=h;
 }
 function apprPR(id,ok){
@@ -1483,128 +1472,271 @@ function apprPR(id,ok){
   askText('Reject purchase request','Reason for rejection',true,function(reason){
     rpcPreview('adm_pr_approve',{p_pr_id:id,p_approve:false,p_reason:reason},'Reject purchase request — review')},{danger:1,ok:'Continue to review'});
 }
-function apprPO(id,ok){
-  if(ok) return rpcPreview('adm_po_approve',{p_po_id:id,p_approve:true,p_reason:null},'Approve purchase order — review');
-  askText('Reject purchase order','Reason for rejection',true,function(reason){
-    rpcPreview('adm_po_approve',{p_po_id:id,p_approve:false,p_reason:reason},'Reject purchase order — review')},{danger:1,ok:'Continue to review'});
-}
 
-/* ================= PURCHASE ORDERS ================= */
+/* ================= READY FOR ODOO =================
+   Purchase orders are made in Odoo (Rommel, 2026-10-18). KEYSTONE ends at an approved request with a
+   supplier chosen on every line: here purchasing sees it grouped by supplier, prints it for encoding,
+   and records the Odoo PO number. When every supplier has one, the request becomes "Ordered". */
 async function viewPO(){
   var _vs=render._seq;   // this page's ticket — see VIEW()
-  VIEW(_vs).innerHTML='<div class="empty">Loading purchase orders…</div>';
-  var oq=await supa.from('adm_purchase_orders').select('*').order('created_at',{ascending:false}).limit(200);
-  var pq=await supa.from('adm_purchase_requests').select('id,pr_no,est_total,company,status,quotation_serial')
-    .in('status',['approved','ordered']);
-  if(oq.error)throw oq.error;
-  var pos=oq.data||[], readyPRs=pq.data||[];
-  var sq=await supa.from('adm_suppliers').select('id,name');
-  var supName={}; (sq.data||[]).forEach(function(x){supName[x.id]=x.name});
-  var prIds=pos.map(function(o){return o.pr_id}).filter(Boolean), prSerial={};
-  if(prIds.length){var pr2=await supa.from('adm_purchase_requests').select('id,pr_no,quotation_serial').in('id',prIds);
-    (pr2.data||[]).forEach(function(x){prSerial[x.id]=x})}
-
-  var h='<div class="card"><h3>Purchase Orders</h3>'+
-    '<p class="sub">Raised against a fully approved request. Each order goes to the Head of '+
-    'Plant Operations; <b>'+poLimitTxt()+' and above</b> also needs the Managing Director. '+
-    'Purchasing is blocked until the client has approved the quotation.</p>'+
-    (readyPRs.length?'<div class="row" style="margin-bottom:10px">'+
-      readyPRs.map(function(p){return '<button data-act="newPO" data-id="'+esc(p.id)+'">'+
-        '<i class="ti ti-plus"></i> New PO from '+esc(p.pr_no)+'</button>'}).join('')+'</div>'
-     :'<div class="info">No approved purchase requests yet. A request must clear the Manager '+
-      'and the Head of Plant Operations before an order can be raised.</div>')+
-    (pos.length?listBar('po','Search order, supplier, request, job, client…')+'<div class="mini" data-lfn="po"></div>'+
-      '<table data-lft="po"><thead><tr><th>Order</th><th>Supplier</th><th class="num">Value</th>'+
-      '<th>Status</th><th>Approvals</th><th></th></tr></thead><tbody>'+
-      pos.map(function(o){
-        var acts='<button class="ghost" data-act="openPO" data-id="'+esc(o.id)+'">Lines</button> ';
-        if(o.status==='draft')acts+='<button data-act="submitPO" data-id="'+esc(o.id)+'">Send for approval</button> ';
-        if(o.status==='approved')acts+='<button class="primary" data-act="issuePO" data-id="'+esc(o.id)+'">Purchase</button>';
-        var pr=prSerial[o.pr_id]||{};
-        return '<tr'+rowAttrs([o.po_no,supName[o.supplier_id],pr.pr_no,pr.quotation_serial,o.status],o.company)+'><td><b>'+esc(o.po_no||'—')+'</b>'+
-          (o.split_flag?'<div class="mini" style="color:var(--amber-ink)">split below threshold</div>':'')+
-          (pr.pr_no?'<div class="mini">from '+esc(pr.pr_no)+(pr.quotation_serial?' · '+esc(pr.quotation_serial):'')+'</div>'+qLabel(pr.quotation_serial):'')+'</td>'+
-          '<td>'+esc(supName[o.supplier_id]||'—')+'</td>'+
-          '<td class="num">'+money(o.total)+'</td>'+
-          '<td>'+pill(o.status)+'</td>'+
-          '<td class="mini">'+(o.hpo_approved_by?'Plant Ops ✓<br>':'')+
-             (o.md_approved_by?'Managing Dir ✓':'')+
-             (!o.hpo_approved_by&&!o.md_approved_by?'—':'')+'</td>'+
-          '<td class="num" style="white-space:nowrap">'+acts+'</td></tr>'}).join('')+'</tbody></table>'
-     :'<div class="empty">No purchase orders yet.</div>')+'</div>';
-  VIEW(_vs).innerHTML=h;
-}
-async function newPO(prId){
-  var pr=await supa.from('adm_purchase_requests').select('*').eq('id',prId).maybeSingle();
-  var ln=await supa.from('adm_pr_lines').select('*').eq('pr_id',prId).order('line_no');
-  var sup=await supa.from('adm_suppliers').select('id,name').order('name');
-  var p=pr.data||{}, rows=ln.data||[], sups=sup.data||[];
-  openModal('<h3>New purchase order from '+esc(p.pr_no||'')+'</h3>'+
-    '<p class="sub">Tick the items going to this one supplier. You can raise several orders '+
-    'from one request — but note each order is judged against the '+poLimitTxt()+' limit on its own.</p>'+
-    '<label>Supplier</label><select id="poSup"><option value="">— choose —</option>'+
-      sups.map(function(x){return '<option value="'+esc(x.id)+'">'+esc(x.name)+'</option>'}).join('')+
-    '</select>'+
-    '<table style="margin-top:10px"><thead><tr><th></th><th>Item</th><th class="num">Qty</th>'+
-    '<th class="num">Unit price</th></tr></thead><tbody>'+
-    rows.map(function(l){
-      return '<tr><td><input type="checkbox" class="poChk" data-id="'+esc(l.id)+'" checked style="width:auto"></td>'+
-        '<td>'+esc(l.item_name)+'</td>'+
-        '<td class="num"><input class="poQty" data-id="'+esc(l.id)+'" type="number" step="any" value="'+(l.qty||0)+'" style="max-width:90px"></td>'+
-        '<td class="num"><input class="poPrc" data-id="'+esc(l.id)+'" type="number" step="any" value="'+(l.est_price||0)+'" style="max-width:110px"></td>'+
-        '</tr>'}).join('')+'</tbody></table>'+
-    '<div class="row right" style="margin-top:14px">'+
-      '<button data-act="closeModal">Cancel</button>'+
-      '<button class="primary" id="okPO">Create order</button></div>');
-  el('okPO').onclick=async function(){
-    var supId=el('poSup').value||null;
-    if(!supId){toast('Choose a supplier.','err');return}
-    var picks=[].slice.call(document.querySelectorAll('.poChk')).filter(function(c){return c.checked});
-    if(!picks.length){toast('Tick at least one item.','err');return}
-    this.disabled=true;
-    var no='PO-'+new Date().toISOString().slice(2,10).replace(/-/g,'')+'-'+
-           Math.random().toString(36).slice(2,6).toUpperCase();
-    var ins=await supa.from('adm_purchase_orders').insert({
-      po_no:no, pr_id:prId, supplier_id:supId, company:p.company, status:'draft'
-    }).select('id').maybeSingle();
-    if(ins.error){closeModal();toast(errMsg(ins.error),'err');return}
-    var poId=ins.data.id, i=0, lines=[];
-    picks.forEach(function(c){
-      var id=c.getAttribute('data-id');
-      var q=document.querySelector('.poQty[data-id="'+id+'"]').value;
-      var pr2=document.querySelector('.poPrc[data-id="'+id+'"]').value;
-      var src=rows.filter(function(x){return x.id===id})[0]||{};
-      i++; lines.push({po_id:poId,pr_line_id:id,line_no:i,item_name:src.item_name,
-        unit:src.unit,qty:parseFloat(q)||0,unit_price:parseFloat(pr2)||0});
+  VIEW(_vs).innerHTML='<div class="empty">Loading approved requests…</div>';
+  var pq=await supa.from('adm_purchase_requests').select('*').in('status',['approved','ordered']).order('approved_at',{ascending:false}).limit(200);
+  if(pq.error){ VIEW(_vs).innerHTML='<div class="card"><h3>Could not load</h3><p class="sub">'+esc(errMsg(pq.error))+'</p></div>'; return; }
+  var prs=pq.data||[], ids=prs.map(function(p){return p.id});
+  var L=[],Q=[],O=[],S={};
+  if(ids.length){
+    var r=await Promise.all([supa.from('adm_pr_lines').select('*').in('pr_id',ids).order('line_no'),
+      supa.from('adm_rfq_quotes').select('*').in('pr_id',ids),
+      supa.from('adm_pr_odoo_pos').select('*').in('pr_id',ids),
+      supa.from('adm_suppliers').select('id,name,tin,contact_person,contact_phone,address')]);
+    L=r[0].data||[];Q=r[1].data||[];O=r[2].data||[];(r[3].data||[]).forEach(function(s){S[s.id]=s});
+  }
+  var offIds=L.map(function(l){return l.awarded_offer_id}).filter(Boolean), OF={};
+  if(offIds.length){ var of=await supa.from('adm_v_rfq_offers').select('*').in('id',offIds); (of.data||[]).forEach(function(o){OF[o.id]=o}); }
+  ODOO={prs:prs,L:L,Q:Q,O:O,S:S,OF:OF};
+  var open=prs.filter(function(p){return p.status==='approved'});
+  var h='<div class="card"><h3>Ready for Odoo</h3>'+
+    '<p class="sub">Approved purchase requests, grouped by the supplier chosen in the canvass. Make the purchase order in <b>Odoo</b>, '+
+    'then record the Odoo PO number here. When every supplier on a request has its PO, the request is marked <b>Ordered</b>.</p>'+
+    '<div class="grid g4">'+kpi('Waiting for an Odoo PO',open.length,'approved requests')+
+      kpi('Ordered',prs.length-open.length,'all POs recorded')+'</div></div>';
+  if(!prs.length){ VIEW(_vs).innerHTML=h+'<div class="card"><div class="empty">No approved requests yet.</div></div>'; return; }
+  h+='<div class="card">'+listBar('odoo','Search request, job, supplier, client…')+'<div class="mini" data-lfn="odoo"></div></div><div data-lft="odoo">';
+  prs.forEach(function(p){
+    var lines=L.filter(function(l){return l.pr_id===p.id}), groups={};
+    lines.forEach(function(l){ var k=l.chosen_supplier_id||'none'; (groups[k]=groups[k]||[]).push(l); });
+    h+='<div class="card"'+rowAttrs([p.pr_no,p.quotation_serial].concat(Object.keys(groups).map(function(k){return (S[k]||{}).name})),p.company)+'>'+
+      '<div class="row" style="flex-wrap:wrap;gap:6px"><h3 style="margin:0">'+esc(p.pr_no)+'</h3>'+pill(p.status)+
+        '<span class="mini">'+esc(p.quotation_serial||'combined')+'</span>'+qLabel(p.quotation_serial)+
+        '<div style="flex:1"></div><button class="ghost" data-act="printOdoo" data-id="'+esc(p.id)+'"><i class="ti ti-printer"></i> Print for Odoo</button></div>';
+    Object.keys(groups).forEach(function(k){
+      var s=S[k]||{}, q=Q.filter(function(x){return x.pr_id===p.id&&x.supplier_id===k})[0]||{}, po=O.filter(function(x){return x.pr_id===p.id&&x.supplier_id===k})[0];
+      var tot=groups[k].reduce(function(a,l){var o=OF[l.awarded_offer_id]||{};return a+(Number(o.unit_price)||0)*(Number(l.qty)||0)},0);
+      h+='<div class="gate" style="margin-top:10px"><div class="row" style="flex-wrap:wrap;gap:6px"><b>'+esc(s.name||'No supplier chosen')+'</b>'+
+        '<span class="mini">'+esc([q.quote_ref&&('quote '+q.quote_ref),vatLabel(q.vat_basis),q.payment_terms,q.delivery_fee?('delivery '+money(q.delivery_fee)):''].filter(Boolean).join(' · '))+'</span>'+
+        '<div style="flex:1"></div>'+(po?'<span class="pill p-green">Odoo PO '+esc(po.odoo_po_no)+'</span>':
+          (ME.caps.can_source&&k!=='none'?'<button class="primary" data-act="recOdoo" data-pr="'+esc(p.id)+'" data-sup="'+esc(k)+'">Record Odoo PO no.</button>':'<span class="mini">Odoo PO not recorded</span>'))+'</div>'+
+        '<table style="margin-top:6px"><thead><tr><th>Item</th><th class="num">Qty</th><th>Unit</th><th class="num">Unit price (as quoted)</th><th class="num">Amount</th></tr></thead><tbody>'+
+        groups[k].map(function(l){var o=OF[l.awarded_offer_id]||{};
+          return '<tr><td>'+esc(l.item_name)+'</td><td class="num">'+num(l.qty)+'</td><td>'+esc(l.unit||'')+'</td>'+
+            '<td class="num">'+money(o.unit_price)+'</td><td class="num">'+money((Number(o.unit_price)||0)*(Number(l.qty)||0))+'</td></tr>'}).join('')+
+        '</tbody></table><div class="row right mini" style="margin-top:4px">Total as quoted <b style="margin-left:6px">'+money(tot)+'</b>&nbsp;('+esc(vatLabel(q.vat_basis))+')</div></div>';
     });
-    var lr=await supa.from('adm_po_lines').insert(lines.filter(function(l){return l.qty>0}));
-    closeModal();
-    if(lr.error){toast(errMsg(lr.error),'err');return}
-    toast('Purchase order '+no+' created as a draft.','ok'); render();
+    h+='</div>';
+  });
+  VIEW(_vs).innerHTML=h+'</div>';
+}
+var ODOO={};
+function vatLabel(v){ return {inclusive:'VAT inclusive',exclusive:'VAT exclusive',non_vat:'Non-VAT supplier',unknown:'VAT not stated'}[v]||'VAT not stated'; }
+function recOdoo(prId,supId){
+  askText('Record the Odoo PO','Odoo PO number',true,function(no){
+    rpcPreview('adm_pr_record_odoo_po',{p_pr_id:prId,p_supplier_id:supId,p_odoo_po:no},'Record Odoo PO — review');
+  },{single:1,ph:'e.g. P00123'});
+}
+function printOdoo(prId){
+  var D=ODOO, p=(D.prs||[]).filter(function(x){return x.id===prId})[0]; if(!p) return;
+  var lines=D.L.filter(function(l){return l.pr_id===prId}), groups={};
+  lines.forEach(function(l){(groups[l.chosen_supplier_id||'none']=groups[l.chosen_supplier_id||'none']||[]).push(l)});
+  var e=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})};
+  var m=function(n){return '₱'+Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})};
+  var html='<html><head><title>'+e(p.pr_no)+' for Odoo</title><style>body{font:13px Arial,sans-serif;color:#000;background:#fff;margin:24px}'+
+    'h1{font-size:18px;margin:0 0 4px}h2{font-size:14px;margin:18px 0 4px}table{border-collapse:collapse;width:100%}'+
+    'td,th{border:1px solid #999;padding:4px 6px;text-align:left}.n{text-align:right}.m{color:#444;font-size:12px}</style></head><body>'+
+    '<h1>'+e(p.pr_no)+' — purchase request for encoding in Odoo</h1><div class="m">'+e(p.company||'')+' · Job '+e(p.quotation_serial||'combined')+
+    ' · approved '+e(String(p.approved_at||p.hpo_approved_at||'').slice(0,10))+'</div>';
+  Object.keys(groups).forEach(function(k){
+    var s=D.S[k]||{}, q=D.Q.filter(function(x){return x.pr_id===prId&&x.supplier_id===k})[0]||{}, tot=0;
+    html+='<h2>'+e(s.name||'No supplier chosen')+'</h2><div class="m">'+e([s.tin&&('TIN '+s.tin),s.contact_person,s.contact_phone,s.address].filter(Boolean).join(' · '))+'</div>'+
+      '<div class="m">'+e([q.quote_ref&&('Supplier quote '+q.quote_ref),q.quote_date,vatLabel(q.vat_basis),q.payment_terms&&('Terms: '+q.payment_terms),
+        q.lead_time_days!=null&&('Lead time '+q.lead_time_days+' days'),q.delivery_fee?('Delivery '+m(q.delivery_fee)):''].filter(Boolean).join(' · '))+'</div>'+
+      '<table><tr><th>Item</th><th class="n">Qty</th><th>Unit</th><th class="n">Unit price</th><th class="n">Amount</th></tr>'+
+      groups[k].map(function(l){var o=D.OF[l.awarded_offer_id]||{}, a=(Number(o.unit_price)||0)*(Number(l.qty)||0); tot+=a;
+        return '<tr><td>'+e(l.item_name)+'</td><td class="n">'+e(l.qty)+'</td><td>'+e(l.unit||'')+'</td><td class="n">'+m(o.unit_price)+'</td><td class="n">'+m(a)+'</td></tr>'}).join('')+
+      '<tr><td colspan="4" class="n"><b>Total as quoted</b></td><td class="n"><b>'+m(tot)+'</b></td></tr></table>';
+  });
+  html+='<p class="m">Printed from KEYSTONE '+e(new Date().toLocaleString())+'</p></body></html>';
+  var w=window.open('','_blank'); if(!w){toast('Allow pop-ups to print.','err');return}
+  w.document.write(html); w.document.close(); setTimeout(function(){w.focus();w.print()},300);
+}
+
+/* ================= CANVASS =================
+   Quotes from several suppliers for one purchase request, compared like for like: the price without
+   VAT for a VAT supplier (input VAT is recovered), the full price for a non-VAT supplier, plus the
+   line's share of the delivery fee. That figure comes from the database (adm_v_rfq_offers), the
+   same one adm_pr_award checks, so the screen and the rule cannot disagree. */
+var CANV={};
+async function openCanvass(prId){
+  var r=await Promise.all([supa.from('adm_purchase_requests').select('*').eq('id',prId).maybeSingle(),
+    supa.from('adm_pr_lines').select('*').eq('pr_id',prId).order('line_no'),
+    supa.from('adm_rfq_quotes').select('*').eq('pr_id',prId).order('entered_at'),
+    supa.from('adm_suppliers').select('id,name,status,vat_registered').order('name')]);
+  if(r[0].error||!r[0].data){toast('Could not open the canvass: '+errMsg(r[0].error||'not found'),'err');return}
+  var p=r[0].data, lines=r[1].data||[], quotes=r[2].data||[], sups=r[3].data||[], S={}; sups.forEach(function(s){S[s.id]=s});
+  var lids=lines.map(function(l){return l.id}), offers=[];
+  if(lids.length){ var o=await supa.from('adm_v_rfq_offers').select('*').in('pr_line_id',lids); offers=o.data||[]; }
+  // price history: what was awarded for the same item on other requests
+  var names=lines.map(function(l){return l.item_name}).filter(Boolean), hist={};
+  if(names.length){
+    var hq=await supa.from('adm_v_rfq_offers').select('item_name,unit_price,landed,supplier_id,created_at,pr_line_id').eq('status','awarded').in('item_name',names).order('created_at',{ascending:false}).limit(500);
+    (hq.data||[]).forEach(function(x){ if(lids.indexOf(x.pr_line_id)>=0) return; var k=(x.item_name||'').toLowerCase(); (hist[k]=hist[k]||[]).push(x); });
+  }
+  CANV={p:p,lines:lines,quotes:quotes,offers:offers,S:S,sups:sups,hist:hist};
+  var cfg=(CACHE.cfg&&CACHE.cfg.value)||{}, minq=Number(cfg.canvassMinQuotes)||3, draft=p.status==='draft';
+  var qs=quotes.map(function(q){return q.supplier_id});
+  var h='<h3>Canvass — '+esc(p.pr_no||'')+' '+pill(p.status)+'</h3>'+
+    '<p class="sub">Get quotes from <b>'+minq+'</b> suppliers per item, then choose one per line. Prices are compared <b>without VAT</b> '+
+    '(input VAT is recovered) for VAT suppliers, at full price for non-VAT suppliers, plus each line\'s share of delivery. '+
+    'The lowest is green. Choosing a higher one, an unaccredited supplier, or with fewer quotes needs a reason.</p>'+
+    (draft?'<div class="row" style="margin-bottom:8px"><button class="primary" data-act="quoteForm" data-pr="'+esc(p.id)+'"><i class="ti ti-plus"></i> Add a supplier quote</button></div>':'');
+  h+=quotes.length?'<div class="grid g3" style="margin-bottom:10px">'+quotes.map(function(q){var s=S[q.supplier_id]||{}, awd=offers.some(function(o){return o.quote_id===q.id&&o.status==='awarded'});
+      var exp=q.valid_until&&q.valid_until<new Date().toISOString().slice(0,10);
+      return '<div class="gate"><b>'+esc(s.name||'?')+'</b> '+pillSup(s.status)+
+        '<div class="mini">'+esc([q.quote_ref&&('Quote '+q.quote_ref),vatLabel(q.vat_basis),q.payment_terms,q.lead_time_days!=null&&(q.lead_time_days+' days'),
+          q.delivery_fee?('delivery '+money(q.delivery_fee)):''].filter(Boolean).join(' · '))+'</div>'+
+        (q.valid_until?'<div class="mini">Valid until <span class="pill '+(exp?'p-red':'p-grey')+'">'+esc(q.valid_until)+'</span></div>':'')+
+        '<div class="row" style="margin-top:6px;gap:6px">'+(q.file_path?'<button class="ghost" data-act="quoteFile" data-path="'+esc(q.file_path)+'" style="font-size:12px">View quote</button>':'')+
+          (draft&&!awd?'<button class="ghost" data-act="quoteForm" data-pr="'+esc(p.id)+'" data-q="'+esc(q.id)+'" style="font-size:12px">Edit</button>'+
+            '<button class="ghost" data-act="quoteDel" data-q="'+esc(q.id)+'" style="font-size:12px">Remove</button>':'')+
+          (awd?'<span class="mini">chosen on some lines</span>':'')+'</div></div>'}).join('')+'</div>'
+    :'<div class="empty">No supplier quotes yet.</div>';
+  if(quotes.length){
+    h+='<div style="overflow-x:auto"><table><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Budget</th>'+
+      quotes.map(function(q){return '<th class="num">'+esc((S[q.supplier_id]||{}).name||'?')+'</th>'}).join('')+'<th>Chosen</th><th>Last bought</th></tr></thead><tbody>'+
+      lines.map(function(l){
+        var lo=offers.filter(function(o){return o.pr_line_id===l.id&&o.unit_price!=null});
+        var min=lo.length?Math.min.apply(null,lo.map(function(o){return Number(o.landed)})):null;
+        var hs=(hist[(l.item_name||'').toLowerCase()]||[])[0];
+        var aw=lo.filter(function(o){return o.id===l.awarded_offer_id})[0];
+        return '<tr><td>'+esc(l.item_name)+'<div class="mini">'+esc(l.unit||'')+(lo.length<minq?' · <span style="color:var(--amber-ink)">'+lo.length+' of '+minq+' quotes</span>':'')+'</div></td>'+
+          '<td class="num">'+num(l.qty)+'</td><td class="num">'+money(l.est_price)+'</td>'+
+          quotes.map(function(q){var o=lo.filter(function(x){return x.quote_id===q.id})[0];
+            if(!o) return '<td class="num mini">—</td>';
+            var best=Number(o.landed)===min, isAw=o.id===l.awarded_offer_id;
+            return '<td class="num" style="'+(best?'background:rgba(22,163,74,.12);':'')+'">'+money(o.unit_price)+
+              '<div class="mini">'+(q.vat_basis==='inclusive'?'VAT inc · ':'')+'compare '+money(o.landed)+'</div>'+
+              (o.moq?'<div class="mini">min. order '+num(o.moq)+'</div>':'')+
+              (isAw?'<span class="pill p-green">Chosen</span>':(draft?'<button class="ghost" data-act="awardOffer" data-line="'+esc(l.id)+'" data-o="'+esc(o.id)+'" style="font-size:12px;padding:2px 8px">Choose</button>':''))+'</td>'}).join('')+
+          '<td class="mini">'+(aw?'<b>'+esc((S[aw.supplier_id]||{}).name||'')+'</b><br>'+money(l.awarded_price)+' compare'+
+            (l.est_price?'<br>'+(Number(l.awarded_price)>Number(l.est_price)?'<span style="color:var(--red-ink,#b91c1c)">over budget</span>':'within budget'):'')+
+            (l.award_reason?'<br>Reason: '+esc(l.award_reason):''):'—')+'</td>'+
+          '<td class="mini">'+(hs?money(hs.landed)+'<br>'+esc((S[hs.supplier_id]||{}).name||'')+'<br>'+dt(hs.created_at):'—')+'</td></tr>';
+      }).join('')+'</tbody></table></div>';
+  }
+  h+='<div class="row right" style="margin-top:14px"><button data-act="closeModal">Close</button>'+
+    '<button data-act="openPR" data-id="'+esc(p.id)+'">Back to the request</button></div>';
+  openModal(h);
+  el('modalBox').style.cssText='max-width:1150px;width:96vw';
+}
+async function quoteFile(path){
+  var r=await supa.storage.from('keystone-quotes').createSignedUrl(path,3600);
+  if(r.error){toast(errMsg(r.error),'err');return}
+  window.open(r.data.signedUrl,'_blank','noopener');
+}
+function quoteDel(qid){
+  ksConfirm('Remove quote','Remove this supplier\'s quote and its prices from the canvass?','Remove',async function(){
+    var r=await supa.from('adm_rfq_quotes').delete().eq('id',qid);
+    if(r.error){toast(errMsg(r.error),'err');return}
+    toast('Quote removed.','ok'); openCanvass(CANV.p.id);
+  });
+}
+function quoteForm(prId,qid){
+  var C=CANV, q=qid?(C.quotes.filter(function(x){return x.id===qid})[0]||{}):{}, taken={};
+  C.quotes.forEach(function(x){if(x.id!==qid) taken[x.supplier_id]=1});
+  var prev={}; if(qid) C.offers.filter(function(o){return o.quote_id===qid}).forEach(function(o){prev[o.pr_line_id]=o});
+  var sel=C.sups.filter(function(s){return !taken[s.id]&&s.status!=='blacklisted'});
+  openModal('<h3>'+(qid?'Edit':'Add')+' a supplier quote</h3>'+
+    '<div class="grid g2"><div><label>Supplier</label><select id="qS"'+(qid?' disabled':'')+'><option value="">— choose —</option>'+
+      sel.map(function(s){return '<option value="'+esc(s.id)+'"'+(s.id===q.supplier_id?' selected':'')+'>'+esc(s.name)+' ('+esc(supStatusLabel(s.status))+')</option>'}).join('')+'</select>'+
+      '<div class="mini">Not on the list? Add it in Purchasing › Suppliers first.</div></div>'+
+    '<div><label>Their quotation (PDF or photo)</label><input id="qF" type="file" accept="application/pdf,image/*">'+
+      '<div class="row" style="margin-top:4px"><button class="ghost" id="qAI" style="font-size:12px"><i class="ti ti-sparkles"></i> Read the prices with AI</button><span class="mini" id="qAIs"></span></div></div></div>'+
+    '<div class="grid g4">'+
+      '<div><label>Quote no.</label><input id="qR" value="'+esc(q.quote_ref||'')+'"></div>'+
+      '<div><label>Quote date</label><input id="qD" type="date" value="'+esc(q.quote_date||'')+'"></div>'+
+      '<div><label>Valid until</label><input id="qV" type="date" value="'+esc(q.valid_until||'')+'"></div>'+
+      '<div><label>VAT in these prices?</label><select id="qVat">'+
+        [['','— choose —'],['inclusive','VAT inclusive'],['exclusive','VAT exclusive'],['non_vat','Non-VAT supplier'],['unknown','Not stated']].map(function(o){
+          return '<option value="'+o[0]+'"'+(o[0]===(q.vat_basis||'')?' selected':'')+'>'+o[1]+'</option>'}).join('')+'</select></div>'+
+      '<div><label>Delivery fee (₱, whole order)</label><input id="qDel" type="number" step="any" value="'+esc(q.delivery_fee||'')+'"></div>'+
+      '<div><label>Payment terms</label><input id="qT" value="'+esc(q.payment_terms||'')+'" placeholder="COD / 30 days"></div>'+
+      '<div><label>Lead time (days)</label><input id="qL" type="number" value="'+esc(q.lead_time_days!=null?q.lead_time_days:'')+'"></div>'+
+      '<div><label>Notes</label><input id="qN" value="'+esc(q.notes||'')+'"></div></div>'+
+    '<table style="margin-top:10px"><thead><tr><th>Item we asked for</th><th class="num">Qty</th><th class="num">Their unit price</th><th class="num">Qty they quoted</th><th class="num">Min. order</th><th>Their wording / note</th></tr></thead><tbody>'+
+      C.lines.map(function(l){var o=prev[l.id]||{};
+        return '<tr><td>'+esc(l.item_name)+'<div class="mini">'+esc(l.unit||'')+'</div></td><td class="num">'+num(l.qty)+'</td>'+
+          '<td class="num"><input class="qP" data-l="'+esc(l.id)+'" type="number" step="any" value="'+esc(o.unit_price!=null?o.unit_price:'')+'" style="max-width:110px" placeholder="no offer"></td>'+
+          '<td class="num"><input class="qQ" data-l="'+esc(l.id)+'" type="number" step="any" value="'+esc(o.qty!=null?o.qty:l.qty)+'" style="max-width:90px"></td>'+
+          '<td class="num"><input class="qM" data-l="'+esc(l.id)+'" type="number" step="any" value="'+esc(o.moq!=null?o.moq:'')+'" style="max-width:80px"></td>'+
+          '<td><input class="qW" data-l="'+esc(l.id)+'" value="'+esc(o.notes||'')+'"></td></tr>'}).join('')+'</tbody></table>'+
+    '<div class="mini" style="margin-top:4px">Leave a price blank where they did not quote. If AI filled the prices, check each against their quotation.</div>'+
+    '<div class="row right" style="margin-top:14px"><button class="ghost" data-act="openCanvass" data-id="'+esc(prId)+'">Cancel</button><button class="primary" id="qOk">Save quote</button></div>');
+  el('modalBox').style.cssText='max-width:1050px;width:96vw';
+  el('qAI').onclick=async function(){
+    var f=el('qF').files[0]; if(!f){toast('Choose their quotation file first.','err');return}
+    if(f.size>8*1024*1024){toast('For AI reading the file must be 8 MB or less.','err');return}
+    this.disabled=true; el('qAIs').textContent='Reading…';
+    try{
+      var x=await ksAI({mode:'quote',file_b64:await fileToB64(f),media_type:f.type||'application/pdf',
+        lines:C.lines.map(function(l){return {id:l.id,item:l.item_name,unit:l.unit,qty:l.qty}})});
+      if(x.quote_ref) el('qR').value=x.quote_ref;
+      if(x.quote_date) el('qD').value=x.quote_date;
+      if(x.valid_until) el('qV').value=x.valid_until;
+      if(x.vat_basis) el('qVat').value=x.vat_basis;
+      if(x.delivery_fee) el('qDel').value=x.delivery_fee;
+      if(x.payment_terms) el('qT').value=x.payment_terms;
+      if(x.lead_time_days!=null) el('qL').value=x.lead_time_days;
+      var n=0;(x.lines||[]).forEach(function(r){ if(!r.line_id) return; var pi=document.querySelector('.qP[data-l="'+r.line_id+'"]'); if(!pi) return;
+        pi.value=r.unit_price; n++;
+        var qi=document.querySelector('.qQ[data-l="'+r.line_id+'"]'); if(qi&&r.qty) qi.value=r.qty;
+        var mi=document.querySelector('.qM[data-l="'+r.line_id+'"]'); if(mi&&r.moq) mi.value=r.moq;
+        var wi=document.querySelector('.qW[data-l="'+r.line_id+'"]'); if(wi) wi.value=[r.item_as_quoted,r.notes].filter(Boolean).join(' — ').slice(0,200); });
+      var unmatched=(x.lines||[]).filter(function(r){return !r.line_id}).length;
+      el('qAIs').textContent=n+' price(s) filled'+(unmatched?', '+unmatched+' quoted item(s) did not match our lines':'')+'. Check them before saving.';
+    }catch(e){ el('qAIs').textContent='Could not read it: '+errMsg(e); }
+    this.disabled=false;
+  };
+  el('qOk').onclick=async function(){
+    var sid=qid?q.supplier_id:el('qS').value; if(!sid){toast('Choose the supplier.','err');return}
+    var vat=el('qVat').value; if(!vat){toast('Say whether VAT is included in their prices.','err');return}
+    var prices=[].slice.call(document.querySelectorAll('.qP')).filter(function(i){return i.value!==''});
+    if(!prices.length){toast('Enter at least one price.','err');return}
+    this.disabled=true;
+    var f=el('qF').files[0], path=q.file_path||null, fname=q.file_name||null;
+    if(f){ if(f.size>10*1024*1024){toast('The file is over 10 MB.','err');this.disabled=false;return}
+      path=prId+'/'+Date.now()+'_'+String(f.name).replace(/[^A-Za-z0-9._-]+/g,'_').slice(-80); fname=f.name;
+      var up=await supa.storage.from('keystone-quotes').upload(path,f,{upsert:false,contentType:f.type||undefined});
+      if(up.error){toast('Upload failed: '+errMsg(up.error),'err');this.disabled=false;return} }
+    var row={pr_id:prId,supplier_id:sid,quote_ref:el('qR').value||null,quote_date:el('qD').value||null,valid_until:el('qV').value||null,
+      vat_basis:vat,delivery_fee:parseFloat(el('qDel').value)||0,payment_terms:el('qT').value||null,lead_time_days:el('qL').value===''?null:parseInt(el('qL').value),
+      notes:el('qN').value||null,file_path:path,file_name:fname};
+    var res=qid?await supa.from('adm_rfq_quotes').update(row).eq('id',qid).select('id').single():await supa.from('adm_rfq_quotes').insert(row).select('id').single();
+    if(res.error){toast(errMsg(res.error),'err');this.disabled=false;return}
+    var quoteId=res.data.id;
+    if(qid){ var dl=await supa.from('adm_rfq_offers').delete().eq('quote_id',quoteId); if(dl.error){toast(errMsg(dl.error),'err');this.disabled=false;return} }
+    var offs=prices.map(function(i){var lid=i.getAttribute('data-l'), l=C.lines.filter(function(x){return x.id===lid})[0]||{};
+      var qq=document.querySelector('.qQ[data-l="'+lid+'"]').value, mm=document.querySelector('.qM[data-l="'+lid+'"]').value;
+      return {pr_line_id:lid,supplier_id:sid,quote_id:quoteId,item_name:l.item_name,unit:l.unit,unit_price:parseFloat(i.value),
+        qty:qq===''?l.qty:parseFloat(qq),moq:mm===''?null:parseFloat(mm),payment_terms:row.payment_terms,valid_until:row.valid_until,
+        lead_time_days:row.lead_time_days,notes:document.querySelector('.qW[data-l="'+lid+'"]').value||null,status:'open',created_by:ME.email}});
+    var ins=await supa.from('adm_rfq_offers').insert(offs);
+    if(ins.error){toast(errMsg(ins.error),'err');this.disabled=false;return}
+    toast('Quote saved.','ok'); openCanvass(prId);
   };
 }
-async function openPO(id){
-  var o=await supa.from('adm_purchase_orders').select('*').eq('id',id).maybeSingle();
-  var l=await supa.from('adm_po_lines').select('*').eq('po_id',id).order('line_no');
-  if(o.error||l.error||!o.data){toast('Could not open the order: '+errMsg(o.error||l.error||'not found'),'err');return}
-  var po=o.data||{}, rows=l.data||[];
-  openModal('<h3>'+esc(po.po_no||'Order')+' '+pill(po.status)+'</h3>'+
-    (po.split_flag?'<div class="warn"><b>Split below threshold.</b> '+esc(po.split_note||'')+'</div>':'')+
-    '<table><thead><tr><th>#</th><th>Item</th><th class="num">Qty</th>'+
-    '<th class="num">Unit price</th><th class="num">Amount</th></tr></thead><tbody>'+
-    (rows.length?rows.map(function(x){return '<tr><td>'+num(x.line_no)+'</td>'+
-      '<td>'+esc(x.item_name)+'</td><td class="num">'+num(x.qty)+'</td>'+
-      '<td class="num">'+money(x.unit_price)+'</td><td class="num">'+money(x.amount)+'</td></tr>'}).join('')
-     :'<tr><td colspan="5"><div class="empty">No lines.</div></td></tr>')+
-    '</tbody></table>'+
-    '<div class="row right" style="margin-top:12px"><b>Total '+money(po.total)+'</b></div>'+
-    (po.hpo_approved_by?'<div class="mini">Plant Ops approved by '+esc(po.hpo_approved_by)+' on '+dt(po.hpo_approved_at)+'</div>':'')+
-    (po.md_approved_by?'<div class="mini">Managing Director approved by '+esc(po.md_approved_by)+' on '+dt(po.md_approved_at)+'</div>':'')+
-    (po.reject_reason?'<div class="warn">Rejected: '+esc(po.reject_reason)+'</div>':'')+
-    '<div class="row right" style="margin-top:14px"><button data-act="closeModal">Close</button></div>');
+function awardOffer(lineId,offerId){
+  var C=CANV, l=C.lines.filter(function(x){return x.id===lineId})[0]||{}, o=C.offers.filter(function(x){return x.id===offerId})[0]||{};
+  var lo=C.offers.filter(function(x){return x.pr_line_id===lineId&&x.unit_price!=null});
+  var min=Math.min.apply(null,lo.map(function(x){return Number(x.landed)}));
+  var q=C.quotes.filter(function(x){return x.id===o.quote_id})[0]||{}, s=C.S[o.supplier_id]||{};
+  var minq=Number(((CACHE.cfg&&CACHE.cfg.value)||{}).canvassMinQuotes)||3, why=[];
+  if(lo.length<minq) why.push('only '+lo.length+' of '+minq+' quotes');
+  if(Number(o.landed)>min) why.push('not the lowest price');
+  if(['accredited','preferred'].indexOf(s.status)<0) why.push((s.name||'the supplier')+' is not accredited');
+  if(q.vat_basis==='unknown') why.push('the quote does not say whether VAT is included');
+  var go_=function(reason){ rpcPreview('adm_pr_award',{p_line_id:lineId,p_offer_id:offerId,p_reason:reason||null},'Choose supplier — review',function(){openCanvass(C.p.id)}); };
+  if(!why.length) return go_(null);
+  askText('Choose '+(s.name||'supplier')+' for '+(l.item_name||'this line'),'Reason',true,go_,{sub:'A reason is needed: '+esc(why.join('; '))+'. It is shown to the approvers.',ok:'Continue to review'});
 }
-function submitPO(id){rpcPreview('adm_po_submit',{p_po_id:id},'Send purchase order for approval — review')}
-function issuePO(id){rpcPreview('adm_po_issue',{p_po_id:id},'Purchase — review')}
 
 /* ================= 3. SOURCING ================= */
 async function viewSourcing(){
@@ -2187,9 +2319,8 @@ async function viewDash(){
     ['awaiting_payment','Awaiting payment','record a payment or vouch','queue'],
     ['ready_to_release','Ready to release','terms met — unlock MR + Job Order','queue'],
     ['pr_to_approve','Requests to approve','purchase requests waiting for you','appr'],
-    ['po_to_approve','Orders to approve','purchase orders waiting for you','appr'],
     ['my_drafts','My drafts','purchase requests to review and sign','review'],
-    ['po_to_act','Orders to raise or buy','approved requests / orders','po'],
+    ['po_to_act','Ready for Odoo','approved requests waiting for an Odoo PO','po'],
     ['mr_to_process','Materials to process','warehouse: confirm what was issued','mr'],
     ['boards_to_decide','Extra board requests','extra boards waiting for a decision','boards'],
     ['sched_to_sign','Schedules to sign','delivery schedules waiting for your signature','lg_sched'],
