@@ -470,8 +470,6 @@ async function rpcPreview(fn,args,title,onDone){
       ' — '+esc(p.data.job_order.pieces)+' pieces, '+esc(p.data.job_order.boards)+' boards. It becomes the PMES job code, matching the printed labels.</div>':'')+
     (p.data&&p.data.job_order_note?'<div style="border:1px solid #b45309;background:#fff7ed;color:#7c2d12;border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:13px">⚠ '+esc(p.data.job_order_note)+'</div>':'')+
     previewSummary(fn,p.data)+
-    '<details style="margin-top:8px"><summary class="mini" style="cursor:pointer">Technical details</summary>'+
-    '<pre class="prev">'+esc(JSON.stringify(p.data,null,2))+'</pre></details>'+
     '<div class="row right" style="margin-top:14px">'+
       '<button class="ghost" data-act="closeModal">Cancel</button>'+
       '<button class="primary" id="goBtn">Confirm</button></div>');
@@ -486,7 +484,7 @@ async function rpcPreview(fn,args,title,onDone){
   };
 }
 
-/* What a review window says in words. The raw reply stays available under "Technical details". */
+/* What a review window says in words (the raw reply is no longer shown — Rommel, 2026-10-18). */
 function _pvRow(k,v){return '<tr><td class="mini" style="padding:3px 10px 3px 0;white-space:nowrap">'+esc(k)+'</td><td><b>'+v+'</b></td></tr>'}
 function previewSummary(fn,d){
   d=d||{}; var h='';
