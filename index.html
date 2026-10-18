@@ -1018,8 +1018,7 @@ async function openGate(serial){
   var q=await supa.from('adm_v_release_queue').select('*').eq('serial',serial).maybeSingle();
   var r=q.data||{};
   var cfg=(CACHE.cfg&&CACHE.cfg.value)||{};
-  var opts=((cfg.paymentOptions)||['Bank transfer','Cheque','Cash','Online']).filter(function(o){return !/vouch/i.test(o)});
-  if(!opts.some(function(o){return /payment terms/i.test(o)})) opts.push('With payment terms');
+  var opts=payOptions();
   var terms=(cfg.termsPresets)||['100% upon approval','50% downpayment, 50% before delivery',
     '30% downpayment, 70% before delivery'];
   openModal('<h3>Open payment gate — '+esc(serial)+'</h3>'+
@@ -1091,13 +1090,25 @@ async function openGate(serial){
   };
 }
 
+// The payment options, same list on the gate and on Record payment (Rommel, 2026-10-18).
+function payOptions(){
+  var cfg=(CACHE.cfg&&CACHE.cfg.value)||{};
+  var o=((cfg.paymentOptions)||['Bank transfer','Cheque','Cash','Online']).filter(function(x){return !/vouch/i.test(x)});
+  if(!o.some(function(x){return /payment terms/i.test(x)})) o.push('With payment terms');
+  return o;
+}
 async function recordPay(gid){
+  var g=(QROWS||[]).filter(function(r){return r.gate_id===gid})[0]||{};
+  var popts=payOptions();
+  if(g.payment_option&&g.payment_option!=='Vouch'&&popts.indexOf(g.payment_option)<0) popts.unshift(g.payment_option);
   openModal('<h3>Record a payment</h3>'+
     '<p class="sub">This is an append-only ledger — payments can be added, never edited away.</p>'+
     '<div class="grid g2">'+
     '<div><label>Amount</label><input id="pAmt" type="number" step="0.01"></div>'+
-    '<div><label>Method</label><select id="pMeth"><option>bank</option><option>cheque</option>'+
-      '<option>cash</option><option>online</option></select></div></div>'+
+    '<div><label>Payment option</label><select id="pMeth">'+
+      popts.map(function(o){return '<option'+(o===g.payment_option?' selected':'')+'>'+esc(o)+'</option>'}).join('')+'</select></div></div>'+
+    (g.payment_terms&&g.payment_option!=='Vouch'?'<div class="mini" style="margin-top:4px">Agreed terms: <b>'+esc(g.payment_terms)+'</b>'+
+      (g.required_amount?' · needed to unlock '+money(g.required_amount):'')+(g.odoo_so?' · Odoo SO '+esc(g.odoo_so):'')+'</div>':'')+
     '<label>Reference (OR / deposit slip / transaction no.)</label><input id="pRef">'+
     '<label>Notes</label><input id="pNote">'+
     '<div class="row right" style="margin-top:14px">'+
