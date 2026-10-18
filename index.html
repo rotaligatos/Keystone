@@ -314,18 +314,15 @@ var ACTIONS={
   recordPay:function(d){recordPay(d.gate)},
   vouch:function(d){vouch(d.gate)},
   vouchProof:function(d){viewVouchProof(d.path)},
+  toggleTest:function(){ksToggleTest()},
+  clearDates:function(){QF.from='';QF.to='';drawQueuePage(QROWS)},
   buildMR:function(d){buildMR(d.gate)},
   release:function(d){release(d.gate)},
   qfTab:function(d){qfTab(d.tab)},
   canvItems:function(d){canvItems(d.serial)},
   setReleasePeople:function(d){setReleasePeople(d.people)},
-  prLines:function(d){prLines(d.id)},
-  submitPR:function(d){submitPR(d.id)},
-  approvePR:function(d){decidePR(d.id,true)},
-  rejectPR:function(d){decidePR(d.id,false)},
   supProducts:function(d){supProducts(d.id,d.name)},
   addProduct:function(d){addProduct(d.id)},
-  mrLines:function(d){mrLines(d.id)},
   mrProcess:function(d){mrProcess(d.id)},
   brDecide:function(d){brDecide(d.id,d.ok==='1')},
   brFinal:function(d){brFinal(d.id,d.ok==='1')},
@@ -375,12 +372,23 @@ var PILL={
   draft:'p-grey', pending_manager:'p-amber', pending_hpo:'p-amber',
   pending_md:'p-amber', approved:'p-green', rejected:'p-red',
   issued:'p-teal', ordered:'p-teal', closed:'p-grey', received:'p-green',
-  authorized:'p-green', issued:'p-teal', partially_issued:'p-amber', partially_received:'p-amber',
+  authorized:'p-green', partially_issued:'p-amber', partially_received:'p-amber',
   sent_to_keystone:'p-amber', accepted:'p-green', rejected_by_keystone:'p-red', escalated:'p-amber',
-  approved_final:'p-green', rejected_final:'p-red', pending_supervisor:'p-grey', pending_manager:'p-grey'
+  approved_final:'p-green', rejected_final:'p-red', pending_supervisor:'p-grey'
 };
+// What staff read on a pill (the stored code stays the same).
+var STATUS_LABEL={
+  pending_payment:'Awaiting payment', paid:'Paid', vouched:'Vouched', released:'Released', cancelled:'Cancelled',
+  draft:'Draft', pending_manager:'Waiting for manager', pending_hpo:'Waiting for Head of Plant Ops',
+  pending_md:'Waiting for Managing Director', approved:'Approved', rejected:'Rejected',
+  issued:'Issued', ordered:'Ordered', closed:'Closed', received:'Received',
+  authorized:'Ready to issue', partially_issued:'Partly issued', partially_received:'Partly received',
+  sent_to_keystone:'Waiting for decision', accepted:'Accepted', rejected_by_keystone:'Rejected',
+  escalated:'Escalated to Head of Plant Ops', approved_final:'Approved (final)', rejected_final:'Rejected (final)',
+  pending_supervisor:'Waiting for supervisor'};
+function statusLabel(s){ return STATUS_LABEL[s]||String(s||'').replace(/_/g,' '); }
 function pill(s){if(!s)return '<span class="pill p-grey">—</span>';
-  return '<span class="pill '+(PILL[s]||'p-grey')+'">'+esc(String(s).replace(/_/g,' '))+'</span>'}
+  return '<span class="pill '+(PILL[s]||'p-grey')+'">'+esc(statusLabel(s))+'</span>'}
 
 /* ---------- auth ---------- */
 async function refreshUser(){
@@ -479,7 +487,7 @@ async function rpcPreview(fn,args,title,onDone){
     closeModal();
     if(r.error){toast(errMsg(r.error),'err');return}
     toast('Done.','ok');
-    CACHE={}; _needAt=0;
+    CACHE={cfg:CACHE.cfg,chain:CACHE.chain}; _needAt=0;
     if(onDone)onDone(r.data); else render();
   };
 }
@@ -561,19 +569,19 @@ async function refreshNeeds(force){
   if(!force&&Date.now()-_needAt<20000) return;
   if(_needBusy) return _needBusy;
   _needBusy=(async function(){
-    var c=ME.caps||{}, canAct=c.can_release||c.can_approve;
+    var c=ME.caps||{}, canAct=c.can_release||c.can_approve, canOpen=c.can_source||c.can_approve;
     var q=await Promise.all([
       supa.from('adm_v_release_queue').select('serial,fq_client_approved,gate_id,gate_status').limit(1000),
-      supa.from('adm_purchase_requests').select('id,status,requested_by,signed_by').limit(1000),
+      supa.from('adm_purchase_requests').select('id,status,requested_by,signed_by,quotation_serial').limit(1000),
       supa.from('adm_purchase_orders').select('id,status').limit(1000),
       supa.from('adm_material_requests').select('id,status').in('status',['authorized','partially_issued']).limit(1000),
       supa.from('pmes_board_requests').select('id,status').in('status',['sent_to_keystone','escalated']).limit(500)
     ]);
-    var gq=(q[0].data||[]).filter(function(r){return !isTestSerial(r.serial)}), prs=q[1].data||[], pos=q[2].data||[], mrs=q[3].data||[], brs=q[4].data||[];
+    var gq=(q[0].data||[]).filter(function(r){return !isTestSerial(r.serial)}), prs=(q[1].data||[]).filter(function(r){return !isTestSerial(r.quotation_serial)}), pos=q[2].data||[], mrs=q[3].data||[], brs=q[4].data||[];
     var fq=gq.filter(function(r){return r.fq_client_approved});
     var mine=function(r){return ((r.requested_by||'').toLowerCase()===ME.email)||((r.signed_by||'').toLowerCase()===ME.email)};
     var d={
-      gates_to_open: canAct?fq.filter(function(r){return !r.gate_id}).length:0,
+      gates_to_open: canOpen?fq.filter(function(r){return !r.gate_id}).length:0,
       awaiting_payment: canAct?fq.filter(function(r){return r.gate_status==='pending_payment'}).length:0,
       ready_to_release: c.can_release?fq.filter(function(r){return r.gate_status==='paid'||r.gate_status==='vouched'}).length:0,
       my_drafts: prs.filter(function(r){return r.status==='draft'&&(r.requested_by||'').toLowerCase()===ME.email}).length,
@@ -609,7 +617,7 @@ function listBar(id,ph){
   return '<div class="row" style="margin-bottom:10px">'+
     '<input data-lf="'+esc(id)+'" placeholder="'+esc(ph||'Search…')+'" value="'+esc(f.q)+'" style="flex:1;min-width:220px">'+
     '<select data-lfc="'+esc(id)+'" style="width:auto;min-width:170px">'+
-      [['','All companies'],['W','World Class Laminate'],['M','Module Systems'],['C','Cebu World Laminate']].map(function(o){
+      [['','All companies'],['W','World Class Laminate'],['M','Module System and Services'],['C','Cebu World Laminate']].map(function(o){
         return '<option value="'+o[0]+'"'+(f.co===o[0]?' selected':'')+'>'+o[1]+'</option>'}).join('')+'</select></div>';
 }
 function applyLF(id){
@@ -648,6 +656,15 @@ async function fillQLabels(){
 }
 
 /* A proper form for a reason (replaces the browser's tiny prompt box). cb(text) on OK. */
+// PO value at which the Managing Director must also approve — read from settings, not hard-coded.
+function poLimitTxt(){ var c=CACHE.chain||{}; return money(Number(c.poSecondApprovalThreshold)||20000); }
+// In-page yes/no (replaces the browser confirm box).
+function ksConfirm(title,msg,okLabel,cb){
+  openModal('<h3>'+esc(title)+'</h3><p class="sub">'+esc(msg)+'</p>'+
+    '<div class="row right" style="margin-top:14px"><button class="ghost" data-act="closeModal">Cancel</button>'+
+    '<button class="danger" id="kcOk">'+esc(okLabel||'Yes')+'</button></div>');
+  el('kcOk').onclick=function(){closeModal();cb()};
+}
 function askText(title,label,required,cb,opts){
   opts=opts||{};
   openModal('<h3>'+esc(title)+'</h3>'+(opts.sub?'<p class="sub">'+opts.sub+'</p>':'')+
@@ -757,11 +774,11 @@ function drawQueuePage(list,_vs){
   var h='<div class="card"><h3>MSSI Payment Transaction</h3>'+
     '<p class="sub">Quotations whose <b>Final Quotation</b> the client has approved — nothing earlier shows here. A final-approved quotation '+
     'stays <b>pending</b> until the agreed payment terms are met or someone vouches for it — '+
-    'only then can the material request and Job Order be unlocked in Modcraft PMES.</p>'+
-    (KS_TEST_N&&ksCanSeeTest()?'<p class="sub"><button class="ghost" onclick="ksToggleTest()" style="padding:3px 10px;font-size:12px;color:#b91c1c;border-color:#fca5a5">'+
+    'only then can the material request and Job Order be unlocked and sent to PMES.</p>'+
+    (KS_TEST_N&&ksCanSeeTest()?'<p class="sub"><button class="ghost" data-act="toggleTest" style="padding:3px 10px;font-size:12px;color:#b91c1c;border-color:#fca5a5">'+
       (KS_SHOW_TEST?'Hide':'Show')+' '+KS_TEST_N+' test quotation'+(KS_TEST_N===1?'':'s')+'</button></p>':'')+
     '<div class="grid g4">'+
-      kpi('Final approved',fq.length,'ready for a payment gate')+
+      kpi('Final approved',fq.length,fq.filter(function(r){return !r.gate_id}).length+' still need a payment gate')+
       kpi('Awaiting payment',fq.filter(function(r){return r.gate_status==='pending_payment'}).length,'gate open, terms not met')+
       kpi('Cleared to release',fq.filter(function(r){return r.gate_status==='paid'||r.gate_status==='vouched'}).length,'admin can unlock now')+
       kpi('Released to production',fq.filter(function(r){return r.gate_status==='released'}).length,'JO active in PMES')+
@@ -776,7 +793,7 @@ function drawQueuePage(list,_vs){
   h+='<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 12px">'+
        '<span class="mini">'+esc(qfDateLabel(QF.tab))+' from</span><input type="date" value="'+esc(QF.from)+'" onchange="qfSetDate(\'from\',this.value)" style="width:160px">'+
        '<span class="mini">to</span><input type="date" value="'+esc(QF.to)+'" onchange="qfSetDate(\'to\',this.value)" style="width:160px">'+
-       ((QF.from||QF.to)?'<button class="ghost" onclick="QF.from=\'\';QF.to=\'\';drawQueuePage(QROWS)" style="padding:3px 10px;font-size:12px">Clear dates</button>':'')+
+       ((QF.from||QF.to)?'<button class="ghost" data-act="clearDates" style="padding:3px 10px;font-size:12px">Clear dates</button>':'')+
      '</div>';
   if(QF.tab!=='waiting'){
   h+='<div class="card"><h3>'+esc((QF_TABS.filter(function(t){return t[0]===QF.tab})[0]||['',''])[1])+'</h3>'+
@@ -786,7 +803,7 @@ function drawQueuePage(list,_vs){
      '<div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:10px">'+
        '<input id="qfSearch" placeholder="Search quotation, client, project, prepared by, agent…" style="flex:1;min-width:240px" value="'+esc(QF.q)+'">'+
        '<select id="qfCo" style="width:210px;flex:0 0 210px"><option value="">All companies</option><option value="W">World Class Laminate</option>'+
-         '<option value="M">Module Systems</option><option value="C">Cebu World Laminate</option></select>'+
+         '<option value="M">Module System and Services</option><option value="C">Cebu World Laminate</option></select>'+
        '<select id="qfSt" style="width:190px;flex:0 0 190px"><option value="">Any status</option><option value="nogate">No gate yet</option>'+
          '<option value="pending_payment">Awaiting payment</option><option value="cleared">Cleared to release</option>'+
          '<option value="released">Released</option></select>'+
@@ -899,7 +916,7 @@ function kpi(lbl,val,hint){
 function gateCard(r){
   var pct=r.amount_due&&r.amount_due>0?Math.min(100,(r.amount_paid||0)/r.amount_due*100):0;
   var need=r.required_amount||0;
-  var canAct=ME.caps.can_release||ME.caps.can_approve;
+  var canAct=ME.caps.can_release||ME.caps.can_approve, canOpen=ME.caps.can_source||ME.caps.can_approve;
   var h='<div class="gate" style="margin-bottom:10px">'+
     '<div class="row" style="flex-wrap:wrap;gap:6px"><b>'+esc(r.serial)+'</b>'+
       (isTestSerial(r.serial)?'<span class="pill" style="background:#dc2626;color:#fff">TEST</span>':'')+
@@ -926,7 +943,7 @@ function gateCard(r){
   if(!r.gate_id){
     h+='<div class="row" style="margin-top:9px"><span class="mini">Quotation total '+
        money(r.total)+'</span><div style="flex:1"></div>'+
-       (canAct?'<button class="primary" data-act="openGate" data-serial="'+esc(r.serial)+'">'+
+       (canOpen?'<button class="primary" data-act="openGate" data-serial="'+esc(r.serial)+'">'+
          'Open payment gate</button>':'<span class="mini">No permission to open a gate</span>')+
        '</div></div>';
     return h;
@@ -959,7 +976,8 @@ function gateCard(r){
       '</div>';
   } else {
     h+='<div class="info" style="margin-top:10px"><i class="ti ti-check"></i> Released '+
-       dt(r.released_at)+'. Modcraft PMES sees this job as active and paid.</div>';
+       dt(r.released_at)+'. '+(r.vouched_by?'Released on a vouch — the job is active in PMES.':
+         (Number(r.balance)>0?'Active in PMES — balance of '+money(r.balance)+' still owed.':'Fully paid — active in PMES.'))+'</div>';
   }
   return h+'</div>';
 }
@@ -1022,9 +1040,7 @@ async function openGate(serial){
   var terms=(cfg.termsPresets)||['100% upon approval','50% downpayment, 50% before delivery',
     '30% downpayment, 70% before delivery'];
   openModal('<h3>Open payment gate — '+esc(serial)+'</h3>'+
-    '<p class="sub">The gate holds production shut until these terms are met. '+
-    'Terms are entered manually for now; when Modcraft exposes client payment terms '+
-    'they can be pulled in automatically.</p>'+
+    '<p class="sub">The gate holds production shut until these terms are met, or until someone vouches for the job.</p>'+
     '<div class="grid g2">'+
       '<div><label>Contract amount</label><input id="gAmt" type="number" step="0.01" value="'+(r.total||0)+'"></div>'+
       '<div><label>Made by (destination plant)</label><select id="gCo">'+
@@ -1038,7 +1054,7 @@ async function openGate(serial){
         '</select></div>'+
     '</div>'+
     '<div id="gTermsBox">'+
-      '<div class="grid g2"><div><label>Required to unlock (%)</label><input id="gPct" type="number" min="1" max="100" value="50"></div><div></div></div>'+
+      '<div class="grid g2"><div><label>Required to unlock (%)</label><input id="gPct" type="number" min="1" max="100" value="'+(Number(cfg.defaultRequiredPct)||50)+'"></div><div></div></div>'+
       '<label>Agreed terms</label><select id="gTerms">'+
         terms.map(function(t){return '<option>'+esc(t)+'</option>'}).join('')+'</select>'+
       '<input id="gTermsTxt" style="margin-top:6px" value="'+esc(terms[0])+'">'+
@@ -1058,7 +1074,8 @@ async function openGate(serial){
   // gate can never say "100% upon approval" while requiring 50%.
   // Rommel 2026-09-27: MSSI builds for both MSSI and WCL quotations; Cebu builds its own.
   el('gCo').value=_coKey(r.company)==='C'?'CWLI':'MSSI';
-  function syncPct(){var m=String(el('gTermsTxt').value).match(/(\d+(?:\.\d+)?)\s*%/); if(m) el('gPct').value=m[1];}
+  function syncPct(){var m=String(el('gTermsTxt').value).match(/(\d+(?:\.\d+)?)\s*%/);
+    el('gPct').value=m?m[1]:(Number(cfg.defaultRequiredPct)||50);}
   el('gTerms').onchange=function(){el('gTermsTxt').value=this.value;syncPct()};
   el('gTermsTxt').oninput=syncPct; syncPct();
   var isWcl=_coKey(r.company)==='W';
@@ -1203,7 +1220,7 @@ async function viewSettings(){
 async function setReleasePeople(p){
   if(p===RELEASE_PEOPLE) return;
   var r=await supa.rpc('adm_set_release_people',{p_people:p});
-  if(r.error){ alert('Could not change it: '+r.error.message); render(); return; }
+  if(r.error){ toast('Could not change it: '+errMsg(r.error),'err'); render(); return; }
   RELEASE_PEOPLE=p; render();
 }
 function release(gid){
@@ -1293,6 +1310,7 @@ function prTable(title,rows,isDraft){
 async function openPR(id){
   var pr=await supa.from('adm_purchase_requests').select('*').eq('id',id).maybeSingle();
   var ln=await supa.from('adm_pr_lines').select('*').eq('pr_id',id).order('line_no');
+  if(pr.error||ln.error||!pr.data){toast('Could not open the request: '+errMsg(pr.error||ln.error||'not found'),'err');return}
   var p=pr.data||{}, rows=ln.data||[];
   var draft=(p.status==='draft');
   var srcs={}; rows.forEach(function(l){if(l.src_ref)srcs[l.src_ref]=1});
@@ -1303,7 +1321,7 @@ async function openPR(id){
     (draft
       ? '<div class="info">Change anything you need, then <b>Sign &amp; send</b>. After signing, '+
         'the lines are locked — that is what the Manager and Head of Plant Operations approve.</div>'
-      : '<div class="warn">This request is <b>'+esc(String(p.status).replace(/_/g,' '))+
+      : '<div class="warn">This request is <b>'+esc(statusLabel(p.status))+
         '</b>. Lines are locked and cannot be edited.</div>')+
     (jobs.length>1?'<div class="info">Combined request covering '+jobs.length+
       ' jobs: '+esc(jobs.join(', '))+'</div>':'')+
@@ -1368,11 +1386,12 @@ async function editLine(lineId,prId){
     toast('Line updated.','ok'); openPR(prId); render();
   };
 }
-async function delLine(lineId,prId){
-  if(!confirm('Remove this line from the request?'))return;
-  var r=await supa.from('adm_pr_lines').delete().eq('id',lineId);
-  if(r.error){toast(errMsg(r.error),'err');return}
-  toast('Line removed.','ok'); openPR(prId); render();
+function delLine(lineId,prId){
+  ksConfirm('Remove line','Remove this line from the request?','Remove',async function(){
+    var r=await supa.from('adm_pr_lines').delete().eq('id',lineId);
+    if(r.error){toast(errMsg(r.error),'err');return}
+    toast('Line removed.','ok'); openPR(prId); render();
+  });
 }
 
 /* ================= APPROVALS ================= */
@@ -1425,7 +1444,7 @@ async function viewApprovals(){
      :'<div class="empty">Nothing waiting for your decision.</div>')+'</div>';
 
   h+='<div class="card"><h3>Purchase orders</h3>'+
-    '<p class="sub">A purchase order of <b>₱20,000 or more</b> needs the Managing Director '+
+    '<p class="sub">A purchase order of <b>'+poLimitTxt()+' or more</b> needs the Managing Director '+
     'as well as the Head of Plant Operations.</p>'+
     (mineO.length?'<table><thead><tr><th>Order</th><th class="num">Value</th><th>Stage</th>'+
       '<th>Notes</th><th></th></tr></thead><tbody>'+
@@ -1471,7 +1490,7 @@ async function viewPO(){
 
   var h='<div class="card"><h3>Purchase Orders</h3>'+
     '<p class="sub">Raised against a fully approved request. Each order goes to the Head of '+
-    'Plant Operations; <b>₱20,000 and above</b> also needs the Managing Director. '+
+    'Plant Operations; <b>'+poLimitTxt()+' and above</b> also needs the Managing Director. '+
     'Purchasing is blocked until the client has approved the quotation.</p>'+
     (readyPRs.length?'<div class="row" style="margin-bottom:10px">'+
       readyPRs.map(function(p){return '<button data-act="newPO" data-id="'+esc(p.id)+'">'+
@@ -1506,7 +1525,7 @@ async function newPO(prId){
   var p=pr.data||{}, rows=ln.data||[], sups=sup.data||[];
   openModal('<h3>New purchase order from '+esc(p.pr_no||'')+'</h3>'+
     '<p class="sub">Tick the items going to this one supplier. You can raise several orders '+
-    'from one request — but note each order is judged against the ₱20,000 limit on its own.</p>'+
+    'from one request — but note each order is judged against the '+poLimitTxt()+' limit on its own.</p>'+
     '<label>Supplier</label><select id="poSup"><option value="">— choose —</option>'+
       sups.map(function(x){return '<option value="'+esc(x.id)+'">'+esc(x.name)+'</option>'}).join('')+
     '</select>'+
@@ -1551,6 +1570,7 @@ async function newPO(prId){
 async function openPO(id){
   var o=await supa.from('adm_purchase_orders').select('*').eq('id',id).maybeSingle();
   var l=await supa.from('adm_po_lines').select('*').eq('po_id',id).order('line_no');
+  if(o.error||l.error||!o.data){toast('Could not open the order: '+errMsg(o.error||l.error||'not found'),'err');return}
   var po=o.data||{}, rows=l.data||[];
   openModal('<h3>'+esc(po.po_no||'Order')+' '+pill(po.status)+'</h3>'+
     (po.split_flag?'<div class="warn"><b>Split below threshold.</b> '+esc(po.split_note||'')+'</div>':'')+
@@ -1780,7 +1800,7 @@ async function mrProcessInline(id){
   if(bad){toast('Enter a quantity for each line (0 if none).','err');return}
   var r=await supa.rpc('adm_mr_process',{p_mr:id,p_lines:lines,p_note:(el('mrNote_'+id)||{}).value||null});
   if(r.error){toast(errMsg(r.error),'err');return}
-  toast('Processed — '+String(r.data.status).replace(/_/g,' ')+' ('+num(r.data.issued)+' of '+num(r.data.requested)+').','ok');
+  toast('Processed — '+statusLabel(r.data.status)+' ('+num(r.data.issued)+' of '+num(r.data.requested)+').','ok');
   _needAt=0; render();
 }
 
@@ -1826,7 +1846,7 @@ async function mrProcess(id){
   }
   var r=await supa.rpc('adm_mr_process',{p_mr:id,p_lines:lines,p_note:(el('mrIssNote')||{}).value||null});
   if(r.error){ toast(r.error.message,'err'); return; }
-  toast('Processed — '+String(r.data.status).replace(/_/g,' ')+' ('+num(r.data.issued)+' of '+num(r.data.requested)+').','ok');
+  toast('Processed — '+statusLabel(r.data.status)+' ('+num(r.data.issued)+' of '+num(r.data.requested)+').','ok');
   closeModal(); render();
 }
 
@@ -1865,7 +1885,7 @@ async function viewBoardReqs(){
         return '<tr'+rowAttrs([r.job_code,r.quotation_serial,r.reason,r.status],r.company)+'><td><b>'+esc(r.job_code||'—')+'</b><div class="mini">'+esc(r.quotation_serial||'')+'<br>'+esc(r.company||'')+'</div>'+qLabel(r.quotation_serial)+'</td>'+
           '<td>'+(r.lines||[]).map(function(l){return num(l.qty)+' × '+esc(l.label);}).join('<br>')+'</td>'+
           '<td>'+esc(r.reason)+'<div class="mini">'+esc(r.created_by_name||r.created_by)+' · '+dt(r.created_at)+'</div></td>'+
-          '<td>'+pill(r.status)+'</td><td class="mini">'+trail+'</td><td>'+(r.mr_id&&mrNo[r.mr_id]?'<b>'+esc(mrNo[r.mr_id].mr_no||'')+'</b><div class="mini">'+esc(mrNo[r.mr_id].status||'')+'</div>':'<span class="mini">—</span>')+'</td><td class="num" style="white-space:nowrap">'+act+'</td></tr>';
+          '<td>'+pill(r.status)+'</td><td class="mini">'+trail+'</td><td>'+(r.mr_id&&mrNo[r.mr_id]?'<b>'+esc(mrNo[r.mr_id].mr_no||'')+'</b><div>'+pill(mrNo[r.mr_id].status)+'</div>':'<span class="mini">—</span>')+'</td><td class="num" style="white-space:nowrap">'+act+'</td></tr>';
       }).join('')+'</tbody></table>'
      :'<div class="empty">No extra board requests yet.</div>')+'</div>';
 }
@@ -1894,13 +1914,17 @@ async function viewDash(){
   VIEW(_vs).innerHTML='<div class="empty">Building dashboard…</div>';
   var g=await supa.from('adm_release_gates').select('*');
   var p=await supa.from('adm_purchase_requests').select('*');
-  var gates=g.data||[], prs=p.data||[];
+  if(g.error||p.error){ VIEW(_vs).innerHTML='<div class="card"><h3>The dashboard could not load</h3><p class="sub">'+esc(errMsg(g.error||p.error))+'</p></div>'; return; }
+  var gates=(g.data||[]).filter(function(x){return !isTestSerial(x.quotation_serial)}),
+      prs=(p.data||[]).filter(function(x){return !isTestSerial(x.quotation_serial)});
   var due=gates.reduce(function(a,x){return a+(Number(x.amount_due)||0)},0);
   var paid=gates.reduce(function(a,x){return a+(Number(x.amount_paid)||0)},0);
   var bal=due-paid;
   var rel=gates.filter(function(x){return x.gate_status==='released'});
   var pend=gates.filter(function(x){return x.gate_status==='pending_payment'});
-  var vou=gates.filter(function(x){return x.gate_status==='vouched'});
+  // Vouched = released on a vouch (a vouched gate becomes "released" once unlocked).
+  var vou=gates.filter(function(x){return x.vouched_by&&x.gate_status==='released'});
+  var owing=rel.filter(function(x){return Number(x.balance)>0});
   // Real open statuses (the old list named statuses that do not exist, so the tile under-counted).
   var prOpen=prs.filter(function(x){return ['draft','pending_manager','pending_hpo'].indexOf(x.status)>=0});
   var prVal=prs.filter(function(x){return x.status==='approved'})
@@ -1943,14 +1967,14 @@ async function viewDash(){
       kpi('Released to production',rel.length,'Job Orders unlocked')+
     '</div><div class="grid g4" style="margin-top:12px">'+
       kpi('Awaiting payment',pend.length,'blocked from production')+
-      kpi('Vouched (on credit)',vou.length,'released without payment')+
+      kpi('Released on a vouch',vou.length,'released before the terms were met')+
       kpi('Open purchase requests',prOpen.length,'canvassing or awaiting approval')+
       kpi('Approved PR value',money(prVal),'committed to suppliers')+
     '</div><div class="grid g4" style="margin-top:12px">'+
       kpi('Avg. gate → release',avgCyc!=null?avgCyc.toFixed(1)+' days':'—','cash-to-production cycle')+
       kpi('Auto-generated PRs',prs.filter(function(x){return x.auto_generated}).length,'from outsource rows')+
       kpi('Suppliers on file',(CACHE.supCount!=null?CACHE.supCount:'—'),'sourcing base')+
-      kpi('Jobs on credit exposure',money(vou.reduce(function(a,x){return a+(Number(x.balance)||0)},0)),'unpaid but released')+
+      kpi('Unpaid on released jobs',money(owing.reduce(function(a,x){return a+(Number(x.balance)||0)},0)),owing.length+' released job(s) still owing')+
     '</div></div>'+
     '<div class="card"><h3>Gate status breakdown</h3>'+
       (gates.length?'<table><thead><tr><th>Quotation</th><th>Status</th><th class="num">Contract</th>'+
@@ -2036,7 +2060,7 @@ var LG_VERB={review:'review',confirm:'confirmation',approve:'approval'};
 var LG_OB={delivered:'Delivered',partial:'Partial',returned:'Refused',issue:'Problem',delay:'Delay',daily:'Daily summary',
   daily_auto:'Daily summary',sched_client:'Schedule confirmation',sched_agent:'Schedule → agent',manual:'Message'};
 var LG_CH={chat:'Google Chat',email:'Email',sms:'SMS'};
-var LG_CO={WCLI:'World Class Laminate',MSSI:'Module Systems',CWLI:'Cebu World Laminate'};
+var LG_CO={WCLI:'World Class Laminate',MSSI:'Module System and Services',CWLI:'Cebu World Laminate'};
 
 function lgPill(map,k,fallback){var x=map[k];return '<span class="pill '+(x?x[1]:'p-grey')+'">'+esc(x?x[0]:(fallback||k||'—'))+'</span>'}
 function lgJobPill(j){return j.status==='completed'&&j.outcome&&LG_OUTCOME[j.outcome]?lgPill(LG_OUTCOME,j.outcome):lgPill(LG_STATUS,j.status)}
@@ -2120,7 +2144,7 @@ function lgLive(fn){
 }
 document.addEventListener('visibilitychange',function(){ if(!document.hidden&&/^lg_/.test(TAB)) render() });
 
-function lgFail(e){ if(!/^lg_/.test(TAB)) return;
+function lgFail(e,tab){ if(tab?TAB!==tab:!/^lg_/.test(TAB)) return;
   el('view').innerHTML='<div class="card"><h3>Logistics could not load</h3><p class="sub">KEYSTONE reads this from HATID. '+
     'The rest of KEYSTONE still works.</p><pre class="prev">'+esc(errMsg(e))+'</pre>'+
     '<button class="primary" data-act="lgRetry">Try again</button></div>';
@@ -2160,7 +2184,7 @@ setInterval(function(){ if(LG.pk){ pkBanner(); if(TAB==='lg_pickup') pkDrawLive(
 async function viewLgPickup(){
   var _vs=render._seq;
   if(!LG.pk) VIEW(_vs).innerHTML='<div class="empty">Loading pick-ups from HATID…</div>';
-  try{ LG.pk=await lgCall('pickup',LG.pkArgs||{}); LG.pkAt=Date.now(); }catch(e){ return lgFail(e) }
+  try{ LG.pk=await lgCall('pickup',LG.pkArgs||{}); LG.pkAt=Date.now(); }catch(e){ return lgFail(e,'lg_pickup') }
   var a=LG.pkArgs||{};
   VIEW(_vs).innerHTML='<div class="card"><div class="row" style="justify-content:space-between"><div><h3>Pick-ups</h3>'+
       '<p class="sub" style="margin:0">From HATID Pick-up mode: clients in the queue now, and how many were served within the target.</p></div>'+
@@ -2214,7 +2238,7 @@ function pkDrawStats(){
 async function viewLgLive(){
   var _vs=render._seq;   // this page's ticket — see VIEW()
   if(!LG.ov) VIEW(_vs).innerHTML='<div class="empty">Loading today’s deliveries from HATID…</div>';
-  try{ await lgLoad(false,LG.date) }catch(e){ return lgFail(e) }
+  try{ await lgLoad(false,LG.date) }catch(e){ return lgFail(e,'lg_live') }
   var ov=LG.ov, f=LG.f;
   var cos=(LG.me&&LG.me.companies)||['WCLI','MSSI','CWLI'];
   VIEW(_vs).innerHTML=
@@ -2335,11 +2359,11 @@ async function lgJob(id){
 async function viewLgSched(){
   var _vs=render._seq;   // this page's ticket — see VIEW()
   if(!LG.ov) VIEW(_vs).innerHTML='<div class="empty">Loading delivery schedules from HATID…</div>';
-  try{ await lgLoad(false) }catch(e){ return lgFail(e) }
+  try{ await lgLoad(false) }catch(e){ return lgFail(e,'lg_sched') }
   lgDrawSched();
   lgLive(async function(){ try{ await lgLoad(true); lgDrawSched() }catch(e){} });
 }
-function lgDrawSched(){ if(!/^lg_/.test(TAB)) return;
+function lgDrawSched(){ if(TAB!=='lg_sched') return;
   var ov=LG.ov, mine=lgNeedsMe(), st=ov.staff;
   var list=(ov.schedules||[]).slice(), un=ov.unprepared||[];
   var notes=(ov.notifications||[]).slice(0,12);
@@ -2443,7 +2467,7 @@ async function viewLgMap(){
     '<p class="sub" style="margin:0">Trucks where their tracker last reported, the day’s drop sites and the plants. Tap a truck for its route today.</p></div><span id="lgUpdWrap"></span></div></div>'+
     '<div class="lg-mapwrap"><div id="lgMap"></div><div id="lgMapList" class="lg-maplist"></div></div>';
   var ml;
-  try{ var r=await Promise.all([lgLoadMap(),lgLoad(false,LG.date)]); ml=r[0] }catch(e){ return lgFail(e) }
+  try{ var r=await Promise.all([lgLoadMap(),lgLoad(false,LG.date)]); ml=r[0] }catch(e){ return lgFail(e,'lg_map') }
   var M=LG.map={m:new ml.Map({container:'lgMap',style:'https://tiles.openfreemap.org/styles/liberty',center:[121.0,14.6],zoom:9}),mk:{},fitted:false,focus:null};
   M.m.addControl(new ml.NavigationControl({showCompass:false}),'top-left');
   M.m.on('load',function(){ M.loaded=true;
@@ -2511,7 +2535,7 @@ async function viewLgMsgs(){
   var _vs=render._seq;   // this page's ticket — see VIEW()
   if(LG.me&&!LG.me.messages){VIEW(_vs).innerHTML='<div class="card"><h3>Client messages</h3><div class="empty">Client messages are open to KEYSTONE Admins, Directors and Managers.</div></div>';return}
   if(!LG.msgs) VIEW(_vs).innerHTML='<div class="empty">Loading client messages from HATID…</div>';
-  try{ await lgLoadMsgs() }catch(e){ return lgFail(e) }
+  try{ await lgLoadMsgs() }catch(e){ return lgFail(e,'lg_msgs') }
   lgDrawMsgs();
   lgLive(async function(){ try{ await lgLoadMsgs(); lgDrawMsgs(true) }catch(e){} });
 }
@@ -2523,7 +2547,7 @@ async function lgLoadMsgs(){
   Object.keys(T).forEach(function(k){var t=T[k];t.items.sort(function(a,b){return new Date(a.at)-new Date(b.at)});t.last=t.items.length?new Date(t.items[t.items.length-1].at).getTime():0});
   LG.msgs={T:T,at:Date.now()}; LG.at=LG.at||Date.now();
 }
-function lgDrawMsgs(keep){ if(!/^lg_/.test(TAB)) return;
+function lgDrawMsgs(keep){ if(TAB!=='lg_msgs') return;
   var T=LG.msgs.T, q=(LG.msgQ||'').toLowerCase();
   var list=Object.keys(T).map(function(k){return T[k]}).sort(function(a,b){return b.last-a.last}).filter(function(t){
     if(!q) return true; var j=t.job||{}; return [j.client,j.serial,j.contact,j.phone].concat(t.items.map(function(i){return i.body})).join(' ').toLowerCase().indexOf(q)>=0});
@@ -2579,6 +2603,8 @@ supa.auth.onAuthStateChange(function(){refreshUser()});
 (async function(){
   var c=await supa.from('adm_settings').select('*').eq('key','CONFIG').maybeSingle();
   CACHE.cfg=c.data;
+  var ch=await supa.from('adm_settings').select('value').eq('key','CHAIN').maybeSingle();
+  CACHE.chain=ch.data&&ch.data.value;
   loadReleasePeople();
   refreshUser();
 })();
