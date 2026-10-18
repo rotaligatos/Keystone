@@ -527,7 +527,7 @@ function previewSummary(fn,d){
    leaf (the screen shown). Each main tab shows a count of what waits for the signed-in person. */
 var GROUPS=[
   {k:'dash',  t:'Dashboard',     i:'ti-chart-bar',     leaves:[['dash','Dashboard']]},
-  {k:'queue', t:'Release Queue', i:'ti-lock-open',     leaves:[['queue','Release queue']]},
+  {k:'queue', t:'MSSI Payment Transaction', i:'ti-lock-open',     leaves:[['queue','MSSI Payment Transaction']]},
   {k:'purch', t:'Purchasing',    i:'ti-file-dollar',   leaves:[['review','My requests'],['appr','Approvals'],['po','Purchase orders'],['src','Suppliers']]},
   {k:'wh',    t:'Warehouse',     i:'ti-package',       leaves:[['mr','Material requests'],['boards','Extra board requests']]},
   // Rommel 2026-09-28: read-only view of HATID (logistics). Signing stays in HATID.
@@ -708,7 +708,7 @@ async function viewQueue(){
     .or('fq_client_approved.eq.true,iq_client_approved.eq.true')
     .order('total',{ascending:false}).limit(2000);
   if(q.error){
-    if(QCACHE){ toast('Could not refresh the Release Queue: '+errMsg(q.error)); return; }
+    if(QCACHE){ toast('Could not refresh MSSI Payment Transaction: '+errMsg(q.error)); return; }
     VIEW(_vs).innerHTML='<div class="card"><div class="warn">'+esc(errMsg(q.error))+'</div></div>'; return;
   }
   var fresh=(q.data||[]).filter(function(r){return r.fq_client_approved||r.iq_client_approved});
@@ -734,7 +734,7 @@ function drawQueuePage(list,_vs){
   var fq=rows.filter(function(r){return r.fq_client_approved});
   var iq=rows.filter(function(r){return !r.fq_client_approved});
 
-  var h='<div class="card"><h3>Release Queue</h3>'+
+  var h='<div class="card"><h3>MSSI Payment Transaction</h3>'+
     '<p class="sub">Quotations the client has approved. A final-approved quotation '+
     'stays <b>pending</b> until the agreed payment terms are met or someone vouches for it — '+
     'only then can the material request and Job Order be unlocked in Modcraft PMES.</p>'+
@@ -1088,7 +1088,7 @@ async function viewReview(){
 
   if(!mine.length){
     h+='<div class="card"><div class="info">You have no purchase requests yet. '+
-       'Go to <b>Release Queue</b> and press <b>Generate PR</b> on a quotation that has '+
+       'Go to <b>MSSI Payment Transaction</b> and press <b>Generate PR</b> on a quotation that has '+
        'outsource materials.</div></div>';
   }
   VIEW(_vs).innerHTML=h;
