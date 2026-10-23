@@ -2082,7 +2082,8 @@ async function openCV(id){
   // quoteForm/quoteDel work on CANV; cv marks canvass mode.
   CANV={cv:c,p:{id:null},lines:lines,quotes:quotes,offers:offers,S:S,sups:sups,hist:hist};
   var open=c.status==='open'&&cvCan(), minsup=Number(((CACHE.cfg&&CACHE.cfg.value)||{}).canvassHpoMinSuppliers)||2;
-  var isHpo=!!ME.caps.is_hpo_approver||!!ME.build, mine=(c.submitted_by||'').toLowerCase()===ME.email;
+  // Build Mode (an Admin testing alone) may approve their own canvass — the database stamps it BUILD_MODE.
+  var isHpo=!!ME.caps.is_hpo_approver||!!(ME.build&&ME.caps.adminTier), mine=(c.submitted_by||'').toLowerCase()===ME.email&&!(ME.build&&ME.caps.adminTier);
   var h='<div class="row" style="flex-wrap:wrap;gap:8px;align-items:center"><h3 style="margin:0">Canvass '+esc(c.cv_no)+'</h3>'+cvPill(c.status)+
       '<span class="mini">'+esc(c.quotation_serial)+' · '+esc(c.client_name||'')+(c.project_name?' — '+esc(c.project_name):'')+' · '+esc(c.company||'')+'</span></div>'+
     '<p class="sub">Price check only — nothing is bought here. Prices are compared <b>without VAT</b> for VAT suppliers (input VAT is recovered), '+
