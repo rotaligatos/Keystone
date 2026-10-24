@@ -2137,6 +2137,9 @@ async function openCV(id){
     '<div class="row right mini" style="margin-top:6px;gap:16px">'+(selTot?'<span>Selling total <b>'+money(selTot)+'</b></span>':'')+
       '<span>Chosen total as quoted <b>'+money(chTot)+'</b></span>'+(selTot&&chTot?'<span>Margin <b>'+((selTot-chTot)/selTot*100).toFixed(1)+'%</b></span>':'')+'</div>'+
     (c.remarks?'<div class="info" style="margin-top:8px">Remarks: '+esc(c.remarks)+'</div>':'');
+  var unch=lines.filter(function(l){return !l.skipped&&!l.chosen_offer_id});
+  if(open&&unch.length) h+='<div class="warn" style="margin-top:10px"><b>Before you submit:</b> press <b>Choose</b> under the price you want for '+
+    esc(unch.map(function(l){return l.item_name}).join(', '))+'. Adding a quote does not choose it.</div>';
   h+='<div class="row right" style="margin-top:14px;gap:8px;flex-wrap:wrap">'+
     '<button class="ghost" data-act="cvPrint" data-id="'+esc(c.id)+'"><i class="ti ti-printer"></i> Print canvass</button>'+
     (c.status!=='converted'&&c.status!=='cancelled'&&((c.started_by||'').toLowerCase()===ME.email||ME.caps.adminTier)?'<button class="ghost" data-act="cvCancel" data-id="'+esc(c.id)+'">Cancel canvass</button>':'')+
