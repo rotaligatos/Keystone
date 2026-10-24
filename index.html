@@ -627,7 +627,8 @@ async function refreshNeeds(force){
         ((r.status==='open'||r.status==='approved')&&(c.can_source||c.can_request)&&(r.started_by||'').toLowerCase()===ME.email)}).length
     };
     NEED_DETAIL=d;
-    NEED={canv:d.canv_to_act, queue:d.gates_to_open+d.ready_to_release, review:d.my_drafts, appr:d.pr_to_approve+d.po_to_approve,
+    NEED={canv:d.canv_to_act, queue:d.gates_to_open+d.ready_to_release, review:d.my_drafts,
+          appr:d.pr_to_approve+d.po_to_approve+cvs.filter(function(r){return r.status==='for_hpo'&&c.is_hpo_approver&&(r.submitted_by||'').toLowerCase()!==ME.email}).length,
           po:d.po_to_act, mr:d.mr_to_process, boards:d.boards_to_decide};
     lgNeedCounts();
     _needAt=Date.now(); _needBusy=null; drawTabs();
@@ -767,16 +768,19 @@ async function viewQueue(){
   var fresh=(q.data||[]).filter(function(r){return r.fq_client_approved});
   // Advance canvassing (Rommel, 2026-10-18): purchasing may SEE the outsource items of a quotation the
   // client has not final-approved yet, to ask suppliers early. No payment, gate or purchase request.
+  var shownSig=QCACHE?QCACHE_SIG:null;   // what is on screen now (drawn from the cache)
   var iqq=await supa.rpc('adm_fq_waiting_list');   // Final Quotations waiting for the client, with their locked date
   var iqFresh=(iqq.data||[]).filter(function(r){return !isTestSerial(r.serial)||(KS_SHOW_TEST&&ksCanSeeTest())});
   CANV_ROWS=iqFresh;
   // Canvass per quotation (Rommel, 2026-10-23): the waiting list shows Start canvassing / Open canvass.
+  KS_TEST_N_WAIT=(iqq.data||[]).filter(function(r){return isTestSerial(r.serial)}).length;
   var cvq=await supa.from('adm_canvass').select('id,cv_no,status,quotation_serial').neq('status','cancelled').limit(2000);
   CV_BY_SERIAL={}; (cvq.data||[]).forEach(function(c){CV_BY_SERIAL[c.quotation_serial]=c});
   KS_TEST_N=fresh.filter(function(r){return isTestSerial(r.serial)}).length;
   if(!(KS_SHOW_TEST&&ksCanSeeTest())) fresh=fresh.filter(function(r){return !isTestSerial(r.serial)});
   var sig=JSON.stringify(fresh)+'|'+JSON.stringify(iqFresh)+'|'+JSON.stringify(CV_BY_SERIAL);
-  if(QCACHE&&sig===QCACHE_SIG) return;          // nothing changed since the cached draw
+  if(_vs!==render._seq) return;                  // another draw took over; do not overwrite the cache it uses
+  if(shownSig!==null&&sig===shownSig) return;    // nothing changed since what is on screen
   QCACHE=fresh; QCACHE_SIG=sig;
   drawQueuePage(fresh,_vs);
 }
@@ -801,6 +805,7 @@ async function canvItems(serial){
    the real queue or the counts: hidden for everyone, shown only to an Admin/Director who asks. */
 function isTestSerial(s){ return /^QT-X/.test(String(s||'')); }
 // Remembered per browser so a reload does not hide the test quotations someone is working on.
+var KS_TEST_N_WAIT=0;
 var KS_SHOW_TEST=(function(){try{return localStorage.getItem('ks_show_test')==='1'}catch(e){return false}})(), KS_TEST_N=0;
 function ksCanSeeTest(){ return ME.role==='Admin'||ME.role==='Director'; }
 function ksToggleTest(){ KS_SHOW_TEST=!KS_SHOW_TEST; try{localStorage.setItem('ks_show_test',KS_SHOW_TEST?'1':'0')}catch(e){} QCACHE=null; QCACHE_SIG=''; CVD=null; render(); }
@@ -814,8 +819,8 @@ function drawQueuePage(list,_vs){
     '<p class="sub">Quotations whose <b>Final Quotation</b> the client has approved — nothing earlier shows here. A final-approved quotation '+
     'stays <b>pending</b> until the agreed payment terms are met or someone vouches for it — '+
     'only then can the material request and Job Order be unlocked and sent to PMES.</p>'+
-    (KS_TEST_N&&ksCanSeeTest()?'<p class="sub"><button class="ghost" data-act="toggleTest" style="padding:3px 10px;font-size:12px;color:#b91c1c;border-color:#fca5a5">'+
-      (KS_SHOW_TEST?'Hide':'Show')+' '+KS_TEST_N+' test quotation'+(KS_TEST_N===1?'':'s')+'</button></p>':'')+
+    ((KS_TEST_N+KS_TEST_N_WAIT||KS_SHOW_TEST)&&ksCanSeeTest()?'<p class="sub"><button class="ghost" data-act="toggleTest" style="padding:3px 10px;font-size:12px;color:#b91c1c;border-color:#fca5a5">'+
+      (KS_SHOW_TEST?'Hide test quotations':'Show '+(KS_TEST_N+KS_TEST_N_WAIT)+' test quotation'+(KS_TEST_N+KS_TEST_N_WAIT===1?'':'s'))+'</button></p>':'')+
     '<div class="grid g4">'+
       kpi('Final approved',fq.length,fq.filter(function(r){return !r.gate_id}).length+' still need a payment gate')+
       kpi('Awaiting payment',fq.filter(function(r){return r.gate_status==='pending_payment'}).length,'gate open, terms not met')+
@@ -1464,7 +1469,7 @@ async function viewApprovals(){
   var pq=await supa.from('adm_purchase_requests').select('*')
     .in('status',['pending_manager','pending_hpo']).order('signed_at');
   if(pq.error)throw pq.error;
-  var prs=pq.data||[];
+  var prs=(pq.data||[]).filter(function(r){return !isTestSerial(r.quotation_serial)||(KS_SHOW_TEST&&ksCanSeeTest())});
   var isMgr=!!ME.caps.is_manager_approver, isHpo=!!ME.caps.is_hpo_approver, isMd=!!ME.caps.is_md_approver;
 
   var mineP=prs.filter(function(r){
@@ -1497,7 +1502,7 @@ async function viewApprovals(){
           '<td>'+pill(r.status)+'</td>'+
           '<td class="num" style="white-space:nowrap">'+
             '<button class="ghost" data-act="openPR" data-id="'+esc(r.id)+'">Lines</button> '+
-            '<button class="ghost" data-act="openCanvass" data-id="'+esc(r.id)+'">Canvass</button> '+
+            '<button class="ghost" data-act="'+(r.canvass_id?'cvOpen':'openCanvass')+'" data-id="'+esc(r.canvass_id||r.id)+'">Canvass</button> '+
             (own?'<span class="mini">your own request</span>'
                 :'<button class="primary" data-act="apprPR" data-id="'+esc(r.id)+'">Approve</button> '+
                  '<button class="danger" data-act="rejPR" data-id="'+esc(r.id)+'">Reject</button>')+
@@ -1508,7 +1513,7 @@ async function viewApprovals(){
   if(isHpo||(ME.build&&ME.caps.adminTier)){
     var cq=await supa.from('adm_canvass').select('id,cv_no,quotation_serial,client_name,project_name,submitted_by,submitted_at').eq('status','for_hpo').order('submitted_at');
     var cvs=(cq.data||[]).filter(function(c){return !isTestSerial(c.quotation_serial)||(KS_SHOW_TEST&&ksCanSeeTest())});
-    h+='<div class="card"><h3>Canvasses waiting for you</h3>'+(cvs.length?'<table><thead><tr><th>Canvass</th><th>Job</th><th>Submitted by</th><th></th></tr></thead><tbody>'+
+    h+='<div class="card"><h3>Canvasses waiting for you</h3>'+(cq.error?'<div class="warn">Could not load canvasses: '+esc(errMsg(cq.error))+'</div>':cvs.length?'<table><thead><tr><th>Canvass</th><th>Job</th><th>Submitted by</th><th></th></tr></thead><tbody>'+
       cvs.map(function(c){return '<tr><td><b>'+esc(c.cv_no)+'</b></td><td>'+esc(c.quotation_serial)+(isTestSerial(c.quotation_serial)?' <span class="pill" style="background:#dc2626;color:#fff">TEST</span>':'')+
         '<div class="mini">'+esc(c.client_name||'')+(c.project_name?' — '+esc(c.project_name):'')+'</div></td>'+
         '<td class="mini">'+esc(c.submitted_by||'')+'<br>'+dt(c.submitted_at)+'</td>'+
@@ -1601,6 +1606,7 @@ async function peopleNames(emails){
 // Where a request is after an action, in words, and where to find it.
 async function prMoved(id){
   var r=await supa.from('adm_purchase_requests').select('pr_no,status').eq('id',id).maybeSingle(), p=r.data||{};
+  if(r.error||!p.status){ _needAt=0; render(); return; }
   var where={pending_manager:'waiting for the Manager — see Approvals › Requests in flight',pending_hpo:'waiting for the Head of Plant Operations — see Approvals',
     approved:'approved — it is now in Ready for Odoo',rejected:'rejected — back with the requester under My requests › Finished',draft:'a draft in My requests'}[p.status]||statusLabel(p.status);
   _needAt=0; render(); toast((p.pr_no||'The request')+' is now '+where+'.','ok');
@@ -2044,9 +2050,11 @@ async function viewCanvassing(){
   var cand=[];
   (r[1].data||[]).forEach(function(q){ if(!has[q.serial]) cand.push({serial:q.serial,client_name:q.client_name,project_name:q.project_name,company:q.company,total:q.total,stage:'Waiting for client approval'}); });
   (r[2].data||[]).forEach(function(q){ if(!has[q.serial]&&!q.pr_id) cand.push({serial:q.serial,client_name:q.client_name,project_name:q.project_name,company:q.company,total:q.total,stage:'Client approved'+(q.gate_status?' · '+statusLabel(q.gate_status):'')}); });
+  var testCand=cand.filter(function(c){return isTestSerial(c.serial)}).length;
   cand=cand.filter(function(c){return !isTestSerial(c.serial)||(KS_SHOW_TEST&&ksCanSeeTest())});
+  if(_vs!==render._seq) return;   // a newer draw of this page took over
   CVD={cvs:cvs,LN:LN,PR:PR,BLK:BLK,cand:cand,_vs:_vs,
-    testN:allCvs.filter(function(c){return isTestSerial(c.quotation_serial)&&c.status!=='cancelled'}).length};
+    testN:allCvs.filter(function(c){return isTestSerial(c.quotation_serial)&&c.status!=='cancelled'}).length+testCand};
   drawCanvassing();
 }
 function drawCanvassing(){
@@ -2060,7 +2068,7 @@ function drawCanvassing(){
     'go to the <b>Head of Plant Operations</b> to approve or note. Nothing is bought here: an approved canvass becomes a purchase request, '+
     'and purchasing waits for the client\'s approval and the agreed payment (or a vouch).</p>'+
     (ksCanSeeTest()&&(D.testN||KS_SHOW_TEST)?'<p class="sub"><button class="ghost" data-act="toggleTest" style="padding:3px 10px;font-size:12px;color:#b91c1c;border-color:#fca5a5">'+
-      (KS_SHOW_TEST?'Hide test quotations':'Show '+D.testN+' test canvass'+(D.testN===1?'':'es'))+'</button></p>':'')+
+      (KS_SHOW_TEST?'Hide test quotations':'Show '+D.testN+' test item'+(D.testN===1?'':'s'))+'</button></p>':'')+
     '<div class="row" style="gap:2px;border-bottom:1px solid var(--line,#2a2f36);margin:4px 0 12px;flex-wrap:wrap">'+
     tabs.map(function(t){return '<button class="'+(CVF.tab===t[0]?'on ':'')+'ghost" data-act="cvFilter" data-tab="'+t[0]+'" style="border-radius:8px 8px 0 0;'+
       (CVF.tab===t[0]?'font-weight:600;border-bottom:2px solid currentColor':'')+'">'+esc(t[1])+_badge(t[2])+'</button>'}).join('')+'</div>';
@@ -2136,9 +2144,9 @@ async function openCV(id){
           q.delivery_fee?('delivery '+money(q.delivery_fee)):''].filter(Boolean).join(' · '))+'</div>'+
         (q.valid_until?'<div class="mini">Valid until <span class="pill '+(exp?'p-red':'p-grey')+'">'+esc(q.valid_until)+'</span></div>':'')+
         '<div class="row" style="margin-top:6px;gap:6px">'+(q.file_path?'<button class="ghost" data-act="quoteFile" data-path="'+esc(q.file_path)+'" style="font-size:12px">View quote</button>':'')+
-          (open?'<button class="ghost" data-act="cvQuote" data-q="'+esc(q.id)+'" style="font-size:12px">Edit</button>'+
-            (awd?'':'<button class="ghost" data-act="quoteDel" data-q="'+esc(q.id)+'" style="font-size:12px">Remove</button>'):'')+
-          (awd?'<span class="mini">chosen on some items</span>':'')+'</div></div>'}).join('')+'</div>'
+          (open&&!awd?'<button class="ghost" data-act="cvQuote" data-q="'+esc(q.id)+'" style="font-size:12px">Edit</button>'+
+            '<button class="ghost" data-act="quoteDel" data-q="'+esc(q.id)+'" style="font-size:12px">Remove</button>':'')+
+          (awd?'<span class="mini">chosen on some items'+(open?' — to edit it, first choose another price on those items':'')+'</span>':'')+'</div></div>'}).join('')+'</div>'
     :'<div class="empty">No supplier quotes yet.'+(open?' Press <b>Add a supplier quote</b>.':'')+'</div>';
   var selTot=0, chTot=0;
   h+='<div style="overflow-x:auto"><table><thead><tr><th>#</th><th>Item</th><th class="num">Qty</th><th class="num">Quotation cost</th><th class="num" style="background:rgba(250,204,21,.18)">Our selling price</th>'+
@@ -2187,12 +2195,13 @@ async function openCV(id){
   openModal(h);
   el('modalBox').style.cssText='max-width:1250px;width:97vw';
 }
-function cvReopen(){ if(CANV&&CANV.cv) openCV(CANV.cv.id); }
+function cvReopen(){ if(TAB==='canv'){ CVD=null; render(); } if(CANV&&CANV.cv) openCV(CANV.cv.id); }
 // After an action the canvass moves to another list. Follow it there and say so — staying on the old list
 // made it look as if it had vanished (Rommel, 2026-10-24).
 async function cvAfter(){
   var id=CANV&&CANV.cv&&CANV.cv.id; if(!id) return;
   var r=await supa.from('adm_canvass').select('status,cv_no').eq('id',id).maybeSingle(), st=r.data&&r.data.status;
+  if(r.error||!st){ CVD=null; _needAt=0; render(); openCV(id); return; }
   var where={open:'Canvassing — returned to the buyer',for_hpo:'Waiting for Head of Plant Ops',approved:'For procurement — next: Create purchase request',
     converted:'Purchase request made',cancelled:'Cancelled'}[st]||st;
   if(st&&st!=='cancelled') CVF.tab=st==='open'?'open':st;
