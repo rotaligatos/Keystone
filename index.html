@@ -3018,10 +3018,7 @@ async function viewProv(){
   var rr=await supa.from('adm_room_reservations').select('*').order('starts_at').limit(50);
   var hr=await supa.from('adm_hris_feed').select('*').order('received_at',{ascending:false}).limit(50);
   VIEW(_vs).innerHTML=
-    '<div class="card"><h3>Delivery schedule</h3>'+
-      '<p class="sub">Outbound delivery schedules now come live from HATID — see <b>Logistics</b>.</p>'+
-      '<button class="primary" data-act="go" data-tab="lg_sched"><i class="ti ti-truck-delivery"></i> Open delivery schedules</button></div>'+
-
+    // Delivery schedules live under Logistics › Delivery schedules (Rommel, 2026-10-24) — no shortcut here.
     '<div class="card"><h3>HRIS <span class="pill p-amber">provision</span></h3>'+
       '<p class="sub">HRIS is not built yet. This is the landing table it will feed — attendance, '+
       'leave, schedules. Nothing here is live; the table exists so connecting HRIS later is a '+
