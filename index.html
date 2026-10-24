@@ -1469,6 +1469,7 @@ async function viewApprovals(){
   var pq=await supa.from('adm_purchase_requests').select('*')
     .in('status',['pending_manager','pending_hpo']).order('signed_at');
   if(pq.error)throw pq.error;
+  var prTestN=(pq.data||[]).filter(function(r){return isTestSerial(r.quotation_serial)}).length;
   var prs=(pq.data||[]).filter(function(r){return !isTestSerial(r.quotation_serial)||(KS_SHOW_TEST&&ksCanSeeTest())});
   var isMgr=!!ME.caps.is_manager_approver, isHpo=!!ME.caps.is_hpo_approver, isMd=!!ME.caps.is_md_approver;
 
@@ -1481,6 +1482,8 @@ async function viewApprovals(){
     '<p class="sub">You are signed in as <b>'+esc(role)+'</b>. '+
     'You cannot approve a request you raised or signed yourself. Open <b>Canvass</b> to see the quotes and why each supplier was chosen. '+
     'Purchase orders are made in Odoo after approval.</p>'+
+    (ksCanSeeTest()&&(prTestN||KS_SHOW_TEST)?'<p class="sub"><button class="ghost" data-act="toggleTest" style="padding:3px 10px;font-size:12px;color:#b91c1c;border-color:#fca5a5">'+
+      (KS_SHOW_TEST?'Hide test quotations':'Show '+prTestN+' test request'+(prTestN===1?'':'s'))+'</button></p>':'')+
     '<div class="grid g4">'+
       kpi('Requests for you',mineP.length,'awaiting your decision')+
       kpi('All requests in flight',prs.length,'across the company')+
