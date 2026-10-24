@@ -1255,7 +1255,7 @@ async function viewSettings(){
   if(!(ME.caps&&ME.caps.adminTier)){ VIEW(_vs).innerHTML='<div class="card"><h3>Settings</h3><p class="sub">Only an Admin or Director can change KEYSTONE settings.</p></div>'; return; }
   var p=await loadReleasePeople();
   var opt=function(v,t,s){ return '<label style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid '+(p===v?'var(--accent,#5b8def)':'var(--line,#333)')+';border-radius:10px;margin-bottom:8px;cursor:pointer">'
-    +'<input type="radio" name="relp" '+(p===v?'checked':'')+' data-act="setReleasePeople" data-people="'+v+'" style="margin-top:3px">'
+    +'<input type="radio" name="relp" '+(p===v?'checked':'')+' data-act="setReleasePeople" data-people="'+v+'" style="margin-top:3px;width:auto;flex:0 0 auto">'
     +'<div><b>'+t+'</b><div class="sub" style="margin:2px 0 0">'+s+'</div></div></label>'; };
   VIEW(_vs).innerHTML='<div class="card"><h3>Release approval</h3>'
     +'<p class="sub">Who may unlock the material request and Job Order for production. Choose to match the people you have. Every change is recorded.</p>'
