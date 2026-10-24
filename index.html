@@ -359,6 +359,7 @@ var ACTIONS={
   cvOpen:function(d){openCV(d.id)},
   cvQuote:function(d){quoteForm(null,d.q)},
   cvChoose:function(d){cvChoose(d.line,d.o)},
+  cvCheapest:function(){cvCheapest()},
   cvLine:function(d){cvLine(d.line)},
   cvAddLine:function(){cvAddLine()},
   cvSubmit:function(){cvSubmit()},
@@ -2093,7 +2094,9 @@ async function openCV(id){
     (c.hpo_by?'<div class="info">'+(c.status==='approved'||c.status==='converted'?'Approved':'Decided')+' by Head of Plant Operations '+esc(c.hpo_by)+' on '+dt(c.hpo_at)+(c.hpo_note?': '+esc(c.hpo_note):'')+'</div>':'')+
     (c.status==='approved'&&!c.needs_hpo?'<div class="info">One supplier per item — approved without the Head of Plant Operations.</div>':'')+
     (open?'<div class="row" style="margin:8px 0;gap:8px;flex-wrap:wrap"><button class="primary" data-act="cvQuote"><i class="ti ti-plus"></i> Add a supplier quote</button>'+
-      '<button data-act="cvAddLine"><i class="ti ti-row-insert-bottom"></i> Add an item</button></div>':'');
+      '<button data-act="cvAddLine"><i class="ti ti-row-insert-bottom"></i> Add an item</button>'+
+      (lines.some(function(l){return !l.skipped&&!l.chosen_offer_id&&offers.some(function(o){return o.cv_line_id===l.id&&o.unit_price!=null})})
+        ?'<button data-act="cvCheapest"><i class="ti ti-arrow-down-circle"></i> Choose the cheapest for every item</button>':'')+'</div>':'');
   h+=quotes.length?'<div class="grid g3" style="margin-bottom:10px">'+quotes.map(function(q){var s=S[q.supplier_id]||{}, awd=offers.some(function(o){return o.quote_id===q.id&&o.status==='awarded'});
       var exp=q.valid_until&&q.valid_until<new Date().toISOString().slice(0,10);
       return '<div class="gate"><b>'+esc(s.name||'?')+'</b> '+pillSup(s.status)+
@@ -2115,7 +2118,8 @@ async function openCV(id){
       var sp=Number(l.selling_price)||0, cu=Number(l.chosen_unit_price)||0;
       if(!l.skipped){ selTot+=sp*(Number(l.qty)||0); chTot+=cu*(Number(l.qty)||0); }
       var mg=(sp&&cu)?((sp-cu)/sp*100):null;
-      return '<tr'+(l.skipped?' style="opacity:.55"':'')+'><td>'+num(l.line_no)+'</td><td>'+esc(l.item_name)+
+      var needs=open&&!l.skipped&&!l.chosen_offer_id;
+      return '<tr'+(l.skipped?' style="opacity:.55"':needs?' style="box-shadow:inset 4px 0 0 #f59e0b"':'')+'><td>'+num(l.line_no)+'</td><td>'+esc(l.item_name)+
           '<div class="mini">'+esc(l.unit||'')+(l.added_by?' · added by hand':'')+(l.areas?' · '+esc(l.areas):'')+'</div>'+
           (l.notes?'<div class="mini">'+esc(l.notes)+'</div>':'')+
           (l.skipped?'<div class="mini"><b>No canvass needed:</b> '+esc(l.skip_reason||'')+'</div>':'')+'</td>'+
@@ -2127,8 +2131,8 @@ async function openCV(id){
           return '<td class="num" style="'+(best?'background:rgba(22,163,74,.12);':'')+'">'+money(o.unit_price)+
             '<div class="mini">'+(q.vat_basis==='inclusive'?'VAT inc · ':'')+'compare '+money(o.landed)+'</div>'+
             '<div class="mini">total '+money((Number(o.unit_price)||0)*(Number(l.qty)||0))+'</div>'+
-            (isAw?'<span class="pill p-green">Chosen</span>':(open&&!l.skipped?'<button class="ghost" data-act="cvChoose" data-line="'+esc(l.id)+'" data-o="'+esc(o.id)+'" style="font-size:12px;padding:2px 8px">Choose</button>':''))+'</td>'}).join('')+
-        '<td class="mini">'+(aw?'<b>'+esc((S[aw.supplier_id]||{}).name||'')+'</b><br>'+money(l.chosen_unit_price)+' each'+(l.choose_reason?'<br>Reason: '+esc(l.choose_reason):''):(l.skipped?'—':'<span style="color:var(--amber-ink,#b45309)">not chosen</span>'))+'</td>'+
+            (isAw?'<span class="pill p-green">✓ Chosen</span>':(open&&!l.skipped?'<button class="primary" data-act="cvChoose" data-line="'+esc(l.id)+'" data-o="'+esc(o.id)+'" style="font-size:12px;padding:4px 12px;margin-top:4px">✓ Choose</button>':''))+'</td>'}).join('')+
+        '<td class="mini">'+(aw?'<b>'+esc((S[aw.supplier_id]||{}).name||'')+'</b><br>'+money(l.chosen_unit_price)+' each'+(l.choose_reason?'<br>Reason: '+esc(l.choose_reason):''):(l.skipped?'—':'<b style="color:#f59e0b">Choose a price ←</b><div class="mini">press ✓ Choose under the supplier you want</div>'))+'</td>'+
         '<td class="mini">'+(mg==null?'—':'<b style="color:'+(mg<0?'#b91c1c':mg<10?'#b45309':'#15803d')+'">'+mg.toFixed(1)+'%</b><br>'+money(sp-cu)+' each')+'</td>'+
         '<td class="mini">'+(hs?money(hs.unit_price)+'<br>'+esc((S[hs.supplier_id]||{}).name||'')+'<br>'+dt(hs.created_at):'—')+'</td>'+
         (open?'<td><button class="ghost" data-act="cvLine" data-line="'+esc(l.id)+'" style="font-size:12px;padding:2px 8px">Edit</button></td>':'')+'</tr>';
@@ -2163,6 +2167,20 @@ function cvChoose(lineId,offerId){
   var go_=function(reason){ rpcPreview('adm_cv_choose',{p_line_id:lineId,p_offer_id:offerId,p_reason:reason||null},'Choose supplier — review',cvReopen); };
   if(!why.length) return go_(null);
   askText('Choose '+(s.name||'supplier')+' for '+(l.item_name||'this item'),'Reason',true,go_,{sub:'A reason is needed: '+esc(why.join('; '))+'. The Head of Plant Operations sees it.',ok:'Continue to review'});
+}
+// One click for the common case: pick the lowest comparable price on every item not yet chosen.
+// Each pick still goes through adm_cv_choose (audited). Quotes that do not state VAT need a reason, so they are left for a person.
+async function cvCheapest(){
+  var C=CANV, done=0, left=[];
+  for(var i=0;i<C.lines.length;i++){ var l=C.lines[i]; if(l.skipped||l.chosen_offer_id) continue;
+    var lo=C.offers.filter(function(o){return o.cv_line_id===l.id&&o.unit_price!=null}); if(!lo.length){left.push(l.item_name);continue}
+    lo.sort(function(a,b){return Number(a.landed)-Number(b.landed)});
+    var q=C.quotes.filter(function(x){return x.id===lo[0].quote_id})[0]||{};
+    if(q.vat_basis==='unknown'){left.push(l.item_name);continue}
+    var r=await supa.rpc('adm_cv_choose',{p_line_id:l.id,p_offer_id:lo[0].id,p_reason:null,p_confirm:true});
+    if(r.error){left.push(l.item_name);continue} done++; }
+  toast('Cheapest chosen on '+done+' item'+(done===1?'':'s')+(left.length?'. Still to choose by hand: '+left.join(', '):'')+'.',left.length?'err':'ok');
+  cvReopen();
 }
 function cvLine(lineId){
   var l=CANV.lines.filter(function(x){return x.id===lineId})[0]||{};
