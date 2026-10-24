@@ -364,8 +364,10 @@ var ACTIONS={
   cvAddLine:function(){cvAddLine()},
   cvSubmit:function(){cvSubmit()},
   cvDecide:function(d){cvDecide(d.ok==='1')},
-  cvToPR:function(d){rpcPreview('adm_cv_to_pr',{p_canvass_id:d.id},'Create purchase request from canvass — review',function(r){go('review');if(r&&r.pr_id)setTimeout(function(){openPR(r.pr_id)},400)})},
-  cvCancel:function(d){askText('Cancel canvass','Reason',true,function(t){rpcPreview('adm_cv_cancel',{p_canvass_id:d.id,p_reason:t},'Cancel canvass — review')})},
+  cvToPR:function(d){rpcPreview('adm_cv_to_pr',{p_canvass_id:d.id},'Create purchase request from canvass — review',function(r){
+    LAST.purch='review'; go('review'); toast((r&&r.pr_no?r.pr_no+' ':'')+'created — it is in My requests › Drafts. Check it, then Sign & send.','ok');
+    if(r&&r.pr_id)setTimeout(function(){openPR(r.pr_id)},500)})},
+  cvCancel:function(d){askText('Cancel canvass','Reason',true,function(t){rpcPreview('adm_cv_cancel',{p_canvass_id:d.id,p_reason:t},'Cancel canvass — review',function(){CVD=null;_needAt=0;render();toast('Canvass cancelled.','ok')})})},
   cvPrint:function(d){printCV(d.id)},
   cvFilter:function(d){CVF.tab=d.tab;drawCanvassing()},
   closeModal:function(){closeModal()},
@@ -798,9 +800,10 @@ async function canvItems(serial){
    chain (gate, MRF, Job Order, PMES) so the chain can be tested end to end. It must never sit in
    the real queue or the counts: hidden for everyone, shown only to an Admin/Director who asks. */
 function isTestSerial(s){ return /^QT-X/.test(String(s||'')); }
-var KS_SHOW_TEST=false, KS_TEST_N=0;
+// Remembered per browser so a reload does not hide the test quotations someone is working on.
+var KS_SHOW_TEST=(function(){try{return localStorage.getItem('ks_show_test')==='1'}catch(e){return false}})(), KS_TEST_N=0;
 function ksCanSeeTest(){ return ME.role==='Admin'||ME.role==='Director'; }
-function ksToggleTest(){ KS_SHOW_TEST=!KS_SHOW_TEST; QCACHE=null; QCACHE_SIG=''; render(); }
+function ksToggleTest(){ KS_SHOW_TEST=!KS_SHOW_TEST; try{localStorage.setItem('ks_show_test',KS_SHOW_TEST?'1':'0')}catch(e){} QCACHE=null; QCACHE_SIG=''; CVD=null; render(); }
 function drawQueuePage(list,_vs){
   if(_vs!==undefined&&_vs!==render._seq) return;   // the person has moved to another tab
   QROWS=list; CANV_OPEN={};
@@ -1311,9 +1314,9 @@ async function viewReview(){
   var h='<div class="card"><div class="row" style="flex-wrap:wrap;gap:8px"><h3 style="margin:0">My Purchase Requests</h3><div style="flex:1"></div>'+
       ((ME.caps.can_request||ME.caps.can_source)?'<button class="primary" data-act="newPR"><i class="ti ti-plus"></i> New purchase request</button>':'')+
       '<button class="ghost" data-act="myPasscode"><i class="ti ti-key"></i> My passcode &amp; signature</button></div>'+
-    '<p class="sub">Outsource materials and hardware pulled from approved quotations. '+
-    'Review them here — adjust quantities, merge duplicate items, pull in other jobs, '+
-    'drop what you don\'t need, then open <b>Canvass</b> to get supplier quotes and choose a supplier for each line — then sign. '+
+    '<p class="sub">Purchase requests. Most start from an approved canvass (<b>Purchasing › Canvassing › For procurement › Create purchase request</b>) '+
+    'and arrive here as a draft with suppliers and prices filled in — check it, then <b>Sign &amp; send</b>. '+
+    'Requests made without a canvass: adjust quantities, merge duplicate items, pull in other jobs, open <b>Canvass</b> to choose suppliers, then sign. '+
     'After approval the purchase order is made in Odoo. <b>Nothing you do here touches the quotation</b>, '+
     'so a locked project total can never change.</p>'+
     '<div class="grid g4">'+
@@ -1386,7 +1389,7 @@ async function openPR(id){
       '<button data-act="consolidatePR" data-id="'+esc(id)+'"><i class="ti ti-arrows-join"></i> Merge duplicate items</button>'+
       '<button data-act="addQuotation" data-id="'+esc(id)+'"><i class="ti ti-plus"></i> Add another job</button>'+
       '<button class="primary" data-act="openCanvass" data-id="'+esc(id)+'"><i class="ti ti-scale"></i> Canvass — quotes &amp; choose suppliers</button>'+
-      '</div>':'<div class="row" style="margin:10px 0"><button data-act="openCanvass" data-id="'+esc(id)+'"><i class="ti ti-scale"></i> View canvass</button></div>')+
+      '</div>':'<div class="row" style="margin:10px 0"><button data-act="'+(p.canvass_id?'cvOpen':'openCanvass')+'" data-id="'+esc(p.canvass_id||id)+'"><i class="ti ti-scale"></i> View canvass</button></div>')+
     (draft&&rows.length&&unawarded?'<div class="warn">'+unawarded+' line(s) still need a supplier chosen in the canvass before you can sign.</div>':'')+
     '<table><thead><tr><th>#</th><th>Item</th><th>Unit</th><th class="num">Qty</th>'+
     '<th class="num">Budget price</th><th class="num">Amount</th><th>Chosen supplier</th>'+(draft?'<th></th>':'')+
@@ -1501,6 +1504,24 @@ async function viewApprovals(){
           '</td></tr>'}).join('')+'</tbody></table>'
      :'<div class="empty">Nothing waiting for your decision.</div>')+'</div>';
 
+  // Canvasses waiting for the Head of Plant Operations show here too — this is where an approver looks.
+  if(isHpo||(ME.build&&ME.caps.adminTier)){
+    var cq=await supa.from('adm_canvass').select('id,cv_no,quotation_serial,client_name,project_name,submitted_by,submitted_at').eq('status','for_hpo').order('submitted_at');
+    var cvs=(cq.data||[]).filter(function(c){return !isTestSerial(c.quotation_serial)||(KS_SHOW_TEST&&ksCanSeeTest())});
+    h+='<div class="card"><h3>Canvasses waiting for you</h3>'+(cvs.length?'<table><thead><tr><th>Canvass</th><th>Job</th><th>Submitted by</th><th></th></tr></thead><tbody>'+
+      cvs.map(function(c){return '<tr><td><b>'+esc(c.cv_no)+'</b></td><td>'+esc(c.quotation_serial)+(isTestSerial(c.quotation_serial)?' <span class="pill" style="background:#dc2626;color:#fff">TEST</span>':'')+
+        '<div class="mini">'+esc(c.client_name||'')+(c.project_name?' — '+esc(c.project_name):'')+'</div></td>'+
+        '<td class="mini">'+esc(c.submitted_by||'')+'<br>'+dt(c.submitted_at)+'</td>'+
+        '<td class="num"><button class="primary" data-act="cvOpen" data-id="'+esc(c.id)+'">Open &amp; decide</button></td></tr>'}).join('')+'</tbody></table>'
+      :'<div class="empty">No canvass waiting for you.</div>')+'</div>';
+  }
+  // Every request still moving, with its stage — so a request you signed never seems to vanish.
+  var others=prs.filter(function(r){return mineP.indexOf(r)<0});
+  if(others.length) h+='<div class="card"><h3>Requests in flight</h3><p class="sub">Waiting for someone else — shown so you can see where each one is.</p>'+
+    '<table><thead><tr><th>Request</th><th>Job</th><th>Raised by</th><th class="num">Budget</th><th>Waiting for</th><th></th></tr></thead><tbody>'+
+    others.map(function(r){return '<tr><td><b>'+esc(r.pr_no)+'</b></td><td>'+esc(r.quotation_serial||'combined')+qLabel(r.quotation_serial)+'</td>'+
+      '<td class="mini">'+esc(r.signed_by||r.requested_by||'')+'</td><td class="num">'+money(r.est_total)+'</td><td>'+pill(r.status)+'</td>'+
+      '<td class="num"><button class="ghost" data-act="openPR" data-id="'+esc(r.id)+'">View</button></td></tr>'}).join('')+'</tbody></table></div>';
   h+='</div>';
   VIEW(_vs).innerHTML=h;
 }
@@ -1577,18 +1598,25 @@ async function peopleNames(emails){
   (r.data||[]).forEach(function(x){ if(x.name) out[x.email]=x.name });
   return out;
 }
+// Where a request is after an action, in words, and where to find it.
+async function prMoved(id){
+  var r=await supa.from('adm_purchase_requests').select('pr_no,status').eq('id',id).maybeSingle(), p=r.data||{};
+  var where={pending_manager:'waiting for the Manager — see Approvals › Requests in flight',pending_hpo:'waiting for the Head of Plant Operations — see Approvals',
+    approved:'approved — it is now in Ready for Odoo',rejected:'rejected — back with the requester under My requests › Finished',draft:'a draft in My requests'}[p.status]||statusLabel(p.status);
+  _needAt=0; render(); toast((p.pr_no||'The request')+' is now '+where+'.','ok');
+}
 function signPR(id){
   closeModal();
   askPass('Sign this purchase request','Signing sends it to the Manager. The lines and chosen suppliers are locked.',function(pc){
-    rpcPreview('adm_pr_sign',{p_pr_id:id,p_passcode:pc},'Sign this request — review');
+    rpcPreview('adm_pr_sign',{p_pr_id:id,p_passcode:pc},'Sign this request — review',function(){prMoved(id)});
   });
 }
 function apprPR(id,ok){
   if(ok) return askPass('Approve purchase request','',function(pc){
-    rpcPreview('adm_pr_approve',{p_pr_id:id,p_passcode:pc,p_approve:true,p_reason:null},'Approve purchase request — review');});
+    rpcPreview('adm_pr_approve',{p_pr_id:id,p_passcode:pc,p_approve:true,p_reason:null},'Approve purchase request — review',function(){prMoved(id)});});
   askText('Reject purchase request','Reason for rejection',true,function(reason){
     askPass('Reject purchase request','',function(pc){
-      rpcPreview('adm_pr_approve',{p_pr_id:id,p_passcode:pc,p_approve:false,p_reason:reason},'Reject purchase request — review');});
+      rpcPreview('adm_pr_approve',{p_pr_id:id,p_passcode:pc,p_approve:false,p_reason:reason},'Reject purchase request — review',function(){prMoved(id)});});
   },{danger:1,ok:'Continue'});
 }
 function setCharge(id,cur,dept){
@@ -2004,7 +2032,8 @@ async function viewCanvassing(){
     supa.rpc('adm_fq_waiting_list'),
     supa.from('adm_v_release_queue').select('serial,client_name,project_name,company,total,fq_client_approved,pr_id,gate_status').eq('fq_client_approved',true).limit(2000)]);
   if(r[0].error){ VIEW(_vs).innerHTML='<div class="card"><h3>Canvasses could not load</h3><p class="sub">'+esc(errMsg(r[0].error))+'</p></div>'; return; }
-  var cvs=(r[0].data||[]).filter(function(c){return !isTestSerial(c.quotation_serial)||(KS_SHOW_TEST&&ksCanSeeTest())});
+  var allCvs=r[0].data||[];
+  var cvs=allCvs.filter(function(c){return !isTestSerial(c.quotation_serial)||(KS_SHOW_TEST&&ksCanSeeTest())});
   var ids=cvs.map(function(c){return c.id}), LN=[], PR={}, BLK={};
   if(ids.length){ var l=await supa.from('adm_canvass_lines').select('canvass_id,skipped,chosen_offer_id,qty,chosen_unit_price').in('canvass_id',ids); LN=l.data||[]; }
   var prIds=cvs.map(function(c){return c.pr_id}).filter(Boolean);
@@ -2016,7 +2045,8 @@ async function viewCanvassing(){
   (r[1].data||[]).forEach(function(q){ if(!has[q.serial]) cand.push({serial:q.serial,client_name:q.client_name,project_name:q.project_name,company:q.company,total:q.total,stage:'Waiting for client approval'}); });
   (r[2].data||[]).forEach(function(q){ if(!has[q.serial]&&!q.pr_id) cand.push({serial:q.serial,client_name:q.client_name,project_name:q.project_name,company:q.company,total:q.total,stage:'Client approved'+(q.gate_status?' · '+statusLabel(q.gate_status):'')}); });
   cand=cand.filter(function(c){return !isTestSerial(c.serial)||(KS_SHOW_TEST&&ksCanSeeTest())});
-  CVD={cvs:cvs,LN:LN,PR:PR,BLK:BLK,cand:cand,_vs:_vs};
+  CVD={cvs:cvs,LN:LN,PR:PR,BLK:BLK,cand:cand,_vs:_vs,
+    testN:allCvs.filter(function(c){return isTestSerial(c.quotation_serial)&&c.status!=='cancelled'}).length};
   drawCanvassing();
 }
 function drawCanvassing(){
@@ -2029,6 +2059,8 @@ function drawCanvassing(){
     '<b>One supplier per item</b> means an existing, cheapest supplier — approved straight away. <b>Two or more suppliers</b> on an item '+
     'go to the <b>Head of Plant Operations</b> to approve or note. Nothing is bought here: an approved canvass becomes a purchase request, '+
     'and purchasing waits for the client\'s approval and the agreed payment (or a vouch).</p>'+
+    (ksCanSeeTest()&&(D.testN||KS_SHOW_TEST)?'<p class="sub"><button class="ghost" data-act="toggleTest" style="padding:3px 10px;font-size:12px;color:#b91c1c;border-color:#fca5a5">'+
+      (KS_SHOW_TEST?'Hide test quotations':'Show '+D.testN+' test canvass'+(D.testN===1?'':'es'))+'</button></p>':'')+
     '<div class="row" style="gap:2px;border-bottom:1px solid var(--line,#2a2f36);margin:4px 0 12px;flex-wrap:wrap">'+
     tabs.map(function(t){return '<button class="'+(CVF.tab===t[0]?'on ':'')+'ghost" data-act="cvFilter" data-tab="'+t[0]+'" style="border-radius:8px 8px 0 0;'+
       (CVF.tab===t[0]?'font-weight:600;border-bottom:2px solid currentColor':'')+'">'+esc(t[1])+_badge(t[2])+'</button>'}).join('')+'</div>';
@@ -2156,7 +2188,19 @@ async function openCV(id){
   el('modalBox').style.cssText='max-width:1250px;width:97vw';
 }
 function cvReopen(){ if(CANV&&CANV.cv) openCV(CANV.cv.id); }
-function cvAfter(){ CVD=null; _needAt=0; if(TAB==='canv') render(); cvReopen(); }
+// After an action the canvass moves to another list. Follow it there and say so — staying on the old list
+// made it look as if it had vanished (Rommel, 2026-10-24).
+async function cvAfter(){
+  var id=CANV&&CANV.cv&&CANV.cv.id; if(!id) return;
+  var r=await supa.from('adm_canvass').select('status,cv_no').eq('id',id).maybeSingle(), st=r.data&&r.data.status;
+  var where={open:'Canvassing — returned to the buyer',for_hpo:'Waiting for Head of Plant Ops',approved:'For procurement — next: Create purchase request',
+    converted:'Purchase request made',cancelled:'Cancelled'}[st]||st;
+  if(st&&st!=='cancelled') CVF.tab=st==='open'?'open':st;
+  CVD=null; _needAt=0; LAST.purch='canv';
+  if(TAB!=='canv') go('canv'); else render();
+  toast((r.data?r.data.cv_no+' ':'')+'is now in: '+where+'.','ok');
+  if(st!=='cancelled') openCV(id);
+}
 function cvChoose(lineId,offerId){
   var C=CANV, l=C.lines.filter(function(x){return x.id===lineId})[0]||{}, o=C.offers.filter(function(x){return x.id===offerId})[0]||{};
   var lo=C.offers.filter(function(x){return x.cv_line_id===lineId&&x.unit_price!=null});
