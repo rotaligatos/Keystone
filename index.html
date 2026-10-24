@@ -360,6 +360,11 @@ var ACTIONS={
   cvQuote:function(d){quoteForm(null,d.q)},
   cvChoose:function(d){cvChoose(d.line,d.o)},
   cvCheapest:function(){cvCheapest()},
+  rptSave:function(){rptSave()},
+  rptXlsx:function(){rptXlsx()},
+  rptPrint:function(){rptPrint()},
+  rptPptx:function(){rptPptx().catch(function(e){toast('PowerPoint export failed: '+errMsg(e),'err')})},
+  rptRange:function(d){rptRange(d.r)},
   cvLine:function(d){cvLine(d.line)},
   cvAddLine:function(){cvAddLine()},
   cvSubmit:function(){cvSubmit()},
@@ -571,15 +576,18 @@ var GROUPS=[
   {k:'wh',    t:'Warehouse',     i:'ti-package',       leaves:[['mr','Material requests'],['boards','Extra board requests']]},
   // Rommel 2026-09-28: read-only view of HATID (logistics). Signing stays in HATID.
   {k:'logi',  t:'Logistics',     i:'ti-truck-delivery',leaves:[['lg_live','Today'],['lg_pickup','Pick-ups'],['lg_sched','Delivery schedules'],['lg_map','Map'],['lg_msgs','Client messages']]},
+  // Rommel 2026-10-24: KPI reports — purchasing, sales, payment status.
+  {k:'rpt',   t:'Reports',       i:'ti-report-analytics',leaves:[['rpt_sales','Sales'],['rpt_pay','Payment status'],['rpt_purch','Purchasing']]},
   {k:'more',  t:'More',          i:'ti-dots',          leaves:[['prov','Plant & HRIS'],['kset','Settings']]}
 ];
 var LAST={};
 function groupOf(leaf){for(var i=0;i<GROUPS.length;i++){if(GROUPS[i].leaves.some(function(l){return l[0]===leaf}))return GROUPS[i]}return GROUPS[0]}
 function _badge(n){return n?' <span class="tabcount">'+n+'</span>':''}
-function leafOk(l){return !(l[0]==='lg_msgs'&&LG.me&&!LG.me.messages)&&!(l[0]==='kset'&&!(ME.caps&&ME.caps.adminTier))}
+function rptAllowed(){var c=ME.caps||{};return !!(c.adminTier||c.is_manager_approver||c.is_hpo_approver||c.is_md_approver)}
+function leafOk(l){return !(l[0]==='lg_msgs'&&LG.me&&!LG.me.messages)&&!(l[0]==='kset'&&!(ME.caps&&ME.caps.adminTier))&&!(/^rpt_/.test(l[0])&&!rptAllowed())}
 function drawTabs(){
   var g=groupOf(TAB);
-  el('tabs').innerHTML=GROUPS.map(function(G){
+  el('tabs').innerHTML=GROUPS.filter(function(G){return G.leaves.some(leafOk)}).map(function(G){
     var n=G.leaves.reduce(function(a,l){return a+(NEED[l[0]]||0)},0);
     return '<button class="'+(g.k===G.k?'on':'')+'" data-act="goGroup" data-g="'+esc(G.k)+'">'+
       '<i class="ti '+G.i+'"></i> '+esc(G.t)+_badge(n)+'</button>'}).join('');
@@ -732,7 +740,7 @@ function render(){
     '<div class="card"><h3>Sign in required</h3>'+
     '<p class="sub">Use the same Google account you use for Modcraft. '+
     'What you can see and do here follows your KEYSTONE role.</p></div>';return}
-  var fn = TAB==='canv'?viewCanvassing : TAB==='review'?viewReview : TAB==='appr'?viewApprovals : TAB==='po'?viewPO
+  var fn = /^rpt_/.test(TAB)?viewReports : TAB==='canv'?viewCanvassing : TAB==='review'?viewReview : TAB==='appr'?viewApprovals : TAB==='po'?viewPO
          : TAB==='queue'?viewQueue : TAB==='src'?viewSourcing
          : TAB==='mr'?viewMR : TAB==='boards'?viewBoardReqs : TAB==='dash'?viewDash
          : TAB==='lg_live'?viewLgLive : TAB==='lg_pickup'?viewLgPickup : TAB==='lg_sched'?viewLgSched : TAB==='lg_map'?viewLgMap : TAB==='lg_msgs'?viewLgMsgs
@@ -2333,6 +2341,326 @@ async function printCV(id){
     '<p style="font-size:10px;color:#333">Canvass only — not a purchase order. Printed from KEYSTONE '+e(new Date().toLocaleString())+'</p></body></html>';
   var w=window.open('','_blank'); if(!w){toast('Allow pop-ups to print.','err');return}
   w.document.write(html); w.document.close(); setTimeout(function(){w.focus();w.print()},400);
+}
+
+/* ================= REPORTS (Rommel, 2026-10-24) =================
+   KPI reports for Purchasing, Sales (MSSI by default) and Payment status. Each report is built ONCE as a
+   model {title, sub, kpis, charts, tables} from the rows the database gives (adm_rpt_*), so the screen,
+   Excel, Print/PDF and PowerPoint always show the same figures. Customising = filters (dates, company,
+   agent, client), chart grouping and which sections to include; a set can be saved by name (adm_saved_reports). */
+var RPT={data:{},cfg:{},saved:[],model:null};
+var RPT_KIND={rpt_purch:'purchasing',rpt_sales:'sales',rpt_pay:'payments'};
+var RPT_TITLE={purchasing:'Purchasing KPIs',sales:'Sales',payments:'Payment status'};
+function rptDefaults(kind){
+  var y=new Date().getFullYear();
+  return {from:y+'-01-01',to:'',co:kind==='sales'?'MSSI':'',agent:'',client:'',group:'month',hidden:[]};
+}
+function rptCfg(kind){ if(!RPT.cfg[kind]) RPT.cfg[kind]=rptDefaults(kind); return RPT.cfg[kind]; }
+function rptD(s){ return s?String(s).slice(0,10):''; }
+function rptIn(dateStr,f){ var d=rptD(dateStr); if(!d) return !f.from&&!f.to; return (!f.from||d>=f.from)&&(!f.to||d<=f.to); }
+function rptDays(a,b){ if(!a||!b) return null; return (new Date(b)-new Date(a))/86400000; }
+function rptAvg(arr){ arr=arr.filter(function(x){return x!=null&&isFinite(x)}); return arr.length?arr.reduce(function(s,x){return s+x},0)/arr.length:null; }
+function rptSum(arr,fn){ return arr.reduce(function(s,x){return s+(Number(fn(x))||0)},0); }
+function rptPct(a,b){ return b?a/b*100:null; }
+function rptPer(d,g){ d=rptD(d); if(!d) return '—'; var y=d.slice(0,4), m=+d.slice(5,7);
+  return g==='quarter'?y+' Q'+Math.ceil(m/3):g==='year'?y:d.slice(0,7); }
+function rptPerLabel(k){ if(/^\d{4}-\d{2}$/.test(k)){ var dd=new Date(k+'-01T00:00:00'); return dd.toLocaleDateString('en-PH',{month:'short',year:'numeric'}); } return k; }
+function rptGroup(rows,keyFn,valFn){ var m={}; rows.forEach(function(r){var k=keyFn(r); m[k]=(m[k]||0)+(Number(valFn(r))||0)}); return m; }
+function rptCoMatch(r,f){ return !f.co||r.co===f.co; }
+function rptText(r,f){ return !f.client||String(r.client_name||'').toLowerCase().indexOf(f.client.toLowerCase())>=0; }
+// Cell formats used by every output: m=money, n=number, p=percent, d=date, t=text, days=days
+function rptFmt(v,t){ if(v==null||v==='') return '—';
+  if(t==='m') return money(v); if(t==='n') return num(Math.round(v*100)/100); if(t==='p') return (Math.round(v*10)/10)+'%';
+  if(t==='d') return dt(v); if(t==='days') return (Math.round(v*10)/10)+' d'; return String(v); }
+
+/* ---------- report models ---------- */
+function rptSalesModel(f){
+  var all=(RPT.data.sales||[]).filter(function(r){return rptCoMatch(r,f)&&rptText(r,f)&&(!f.agent||r.agent===f.agent)});
+  var won=all.filter(function(r){return r.stage==='approved'&&rptIn(r.approved_at,f)});
+  var lost=all.filter(function(r){return r.stage==='lost'&&rptIn(r.cancelled_at||r.created_at,f)});
+  var pipe=all.filter(function(r){return r.stage==='waiting'||r.stage==='waiting_iq'}).map(function(r){
+      r._wait=rptDays(r.stage==='waiting'?(r.final_locked_at||r.created_at):(r.initial_locked_at||r.created_at),new Date());return r})
+    .sort(function(a,b){return (b._wait||0)-(a._wait||0)});
+  var wonV=rptSum(won,function(r){return r.total});
+  var cycle=rptAvg(won.map(function(r){return rptDays(r.final_locked_at,r.approved_at)}));
+  var byPer=rptGroup(won,function(r){return rptPer(r.approved_at,f.group)},function(r){return r.total});
+  var pers=Object.keys(byPer).sort();
+  var agents={}; won.concat(lost).forEach(function(r){var a=agents[r.agent]=agents[r.agent]||{agent:r.agent,v:0,w:0,l:0};
+    if(r.stage==='approved'){a.v+=Number(r.total)||0;a.w++}else a.l++});
+  var ag=Object.keys(agents).map(function(k){return agents[k]}).sort(function(a,b){return b.v-a.v});
+  var clients={}; won.forEach(function(r){var k=r.client_name||'(no client)', c=clients[k]=clients[k]||{c:k,v:0,n:0}; c.v+=Number(r.total)||0; c.n++});
+  var cl=Object.keys(clients).map(function(k){return clients[k]}).sort(function(a,b){return b.v-a.v});
+  return {title:'Sales'+(f.co?' — '+f.co:''),
+    note:'Sales = Final Quotations the client approved, dated by approval. Lost = quotations cancelled in Modcraft. Pipeline = quotations sent and waiting for the client — Initial and Final — as of today (not limited by the dates).',
+    kpis:[{l:'Approved sales',v:wonV,t:'m'},{l:'Jobs won',v:won.length,t:'n'},{l:'Average job value',v:won.length?wonV/won.length:null,t:'m'},
+      {l:'Win rate',v:rptPct(won.length,won.length+lost.length),t:'p',h:won.length+' won · '+lost.length+' lost'},
+      {l:'Pipeline (waiting for client)',v:rptSum(pipe,function(r){return r.total}),t:'m',
+        h:pipe.filter(function(r){return r.stage==='waiting_iq'}).length+' initial · '+pipe.filter(function(r){return r.stage==='waiting'}).length+' final'},
+      {l:'Days from final lock to approval',v:cycle,t:'days',h:'average'}],
+    charts:[{k:'s_trend',title:'Approved sales by '+f.group,type:'col',labels:pers.map(rptPerLabel),values:pers.map(function(p){return byPer[p]}),t:'m'},
+      {k:'s_agent',title:'Approved sales by agent',type:'bar',labels:ag.slice(0,10).map(function(a){return a.agent}),values:ag.slice(0,10).map(function(a){return a.v}),t:'m'}],
+    tables:[{k:'s_agents',title:'By sales agent',cols:[['Agent','t'],['Approved sales','m'],['Won','n'],['Lost','n'],['Win rate','p'],['Average job','m']],
+        rows:ag.map(function(a){return [a.agent,a.v,a.w,a.l,rptPct(a.w,a.w+a.l),a.w?a.v/a.w:null]})},
+      {k:'s_clients',title:'Top clients',cols:[['Client','t'],['Approved sales','m'],['Jobs','n']],rows:cl.map(function(c){return [c.c,c.v,c.n]})},
+      {k:'s_pipe',title:'Pipeline — waiting for the client',cols:[['Quotation','t'],['Stage','t'],['Client','t'],['Agent','t'],['Total','m'],['Sent (locked)','d'],['Days waiting','days']],
+        rows:pipe.map(function(r){return [r.serial,r.stage==='waiting'?'Final':'Initial',r.client_name,r.agent,r.total,r.stage==='waiting'?r.final_locked_at:r.initial_locked_at,r._wait]})},
+      {k:'s_won',title:'Approved jobs',cols:[['Quotation','t'],['Client','t'],['Project','t'],['Agent','t'],['Total','m'],['Approved','d']],
+        rows:won.slice().sort(function(a,b){return String(b.approved_at).localeCompare(String(a.approved_at))}).map(function(r){return [r.serial,r.client_name,r.project_name,r.agent,r.total,r.approved_at]})}]};
+}
+function rptPayModel(f){
+  var all=(RPT.data.payments||[]).filter(function(r){return rptCoMatch(r,f)&&rptText(r,f)&&(!f.agent||r.agent===f.agent)&&rptIn(r.approved_at,f)});
+  var gated=all.filter(function(r){return r.gate_status!=='no_gate'}), nogate=all.filter(function(r){return r.gate_status==='no_gate'});
+  var due=rptSum(gated,function(r){return r.total}), paid=rptSum(gated,function(r){return r.amount_paid}), bal=rptSum(gated,function(r){return r.balance});
+  var owing=gated.filter(function(r){return Number(r.balance)>0.005});
+  var buckets=[['0–30 days',0,30],['31–60 days',31,60],['61–90 days',61,90],['Over 90 days',91,1e9]].map(function(b){
+    var rs=owing.filter(function(r){var d=Math.floor(rptDays(r.approved_at,new Date())||0);return d>=b[1]&&d<=b[2]});
+    return {l:b[0],n:rs.length,v:rptSum(rs,function(r){return r.balance})}});
+  var waiting=all.filter(function(r){return r.gate_status==='pending_payment'})
+    .map(function(r){r._age=rptDays(r.approved_at,new Date());return r}).sort(function(a,b){return (b._age||0)-(a._age||0)});
+  var vou=gated.filter(function(r){return r.vouched_by});
+  var cos={}; gated.forEach(function(r){var c=cos[r.co||'—']=cos[r.co||'—']||{p:0,b:0}; c.p+=Number(r.amount_paid)||0; c.b+=Number(r.balance)||0});
+  var ck=Object.keys(cos).sort();
+  var label=function(s){return s==='no_gate'?'No payment recorded in KEYSTONE':statusLabel(s)};
+  return {title:'Payment status'+(f.co?' — '+f.co:''),
+    note:'Covers client-approved quotations in the date range (by approval date). Collected and balance count only jobs with a payment gate in KEYSTONE; '+nogate.length+' approved job(s) have no gate, so their payments are not recorded here.',
+    kpis:[{l:'Value with a payment gate',v:due,t:'m',h:gated.length+' jobs'},{l:'Collected',v:paid,t:'m'},{l:'Balance owed',v:bal,t:'m',h:owing.length+' jobs'},
+      {l:'Collection rate',v:rptPct(paid,due),t:'p'},{l:'Waiting for payment',v:waiting.length,t:'n',h:money(rptSum(waiting,function(r){return Math.max(0,(Number(r.required_amount)||0)-(Number(r.amount_paid)||0))}))+' still needed to release'},
+      {l:'Approved, no payment gate yet',v:nogate.length,t:'n',h:money(rptSum(nogate,function(r){return r.total}))+' — payments not recorded in KEYSTONE'},
+      {l:'Released on a vouch',v:vou.length,t:'n',h:money(rptSum(vou,function(r){return r.balance}))+' still unpaid'}],
+    charts:[{k:'p_co',title:'Collected vs balance by company',type:'col2',labels:ck,series:[{n:'Collected',v:ck.map(function(k){return cos[k].p})},{n:'Balance',v:ck.map(function(k){return cos[k].b})}],t:'m'},
+      {k:'p_age',title:'Balance owed by age',type:'col',labels:buckets.map(function(b){return b.l}),values:buckets.map(function(b){return b.v}),t:'m'}],
+    tables:[{k:'p_aging',title:'Aging of balances (days since client approval)',cols:[['Age','t'],['Jobs','n'],['Balance','m']],rows:buckets.map(function(b){return [b.l,b.n,b.v]})},
+      {k:'p_wait',title:'Waiting for payment (gate open, terms not met)',cols:[['Quotation','t'],['Client','t'],['Total','m'],['Required now','m'],['Paid','m'],['Status','t'],['Days since approval','days']],
+        rows:waiting.map(function(r){return [r.serial,r.client_name,r.total,r.required_amount,r.amount_paid,label(r.gate_status),r._age]})},
+      {k:'p_vouch',title:'Vouched jobs',cols:[['Quotation','t'],['Client','t'],['Vouched by','t'],['For','t'],['Balance','m'],['Vouch expires','d'],['Reason','t']],
+        rows:vou.map(function(r){return [r.serial,r.client_name,r.vouched_by,r.vouch_name,r.balance,r.vouch_expires_at,r.vouch_reason]})},
+      {k:'p_all',title:'All approved jobs',cols:[['Quotation','t'],['Company','t'],['Client','t'],['Total','m'],['Paid','m'],['Balance','m'],['Status','t'],['Terms','t'],['Approved','d']],
+        rows:all.map(function(r){return [r.serial,r.co,r.client_name,r.total,r.amount_paid,r.gate_status==='no_gate'?null:r.balance,label(r.gate_status),r.payment_terms,r.approved_at]})}]};
+}
+function rptPurchModel(f){
+  var P=RPT.data.purchasing||{}, inF=function(r,d){return rptCoMatch(r,f)&&rptText(r,f)&&rptIn(d,f)};
+  var cl=(P.canvass||[]).filter(function(r){return !r.skipped&&inF(r,r.started_at)});
+  var chosen=cl.filter(function(r){return r.chosen_unit_price!=null});
+  var withCost=chosen.filter(function(r){return r.est_price!=null});
+  var costV=rptSum(withCost,function(r){return r.est_price*r.qty}), buyV=rptSum(withCost,function(r){return r.chosen_unit_price*r.qty});
+  var cvs={}; cl.forEach(function(r){cvs[r.cv_no]=r});
+  var cvList=Object.keys(cvs).map(function(k){return cvs[k]});
+  var cvT=rptAvg(cvList.filter(function(c){return c.status==='approved'||c.status==='converted'}).map(function(c){return rptDays(c.started_at,c.hpo_at||c.submitted_at)}));
+  var req=(P.requests||[]).filter(function(r){return inF(r,r.signed_at||r.created_at)});
+  var prT=rptAvg(req.map(function(r){return rptDays(r.signed_at,r.hpo_approved_at)}));
+  var poT=rptAvg(req.map(function(r){return rptDays(r.hpo_approved_at,r.first_po_at)}));
+  var sp=(P.spend||[]).filter(function(r){return inF(r,r.approved_at)});
+  var sup={}; sp.forEach(function(r){var k=r.supplier||'(none)', s=sup[k]=sup[k]||{s:k,v:0,n:0,w:0}; s.v+=Number(r.amount)||0; s.n++});
+  chosen.forEach(function(r){var k=r.supplier||'(none)', s=sup[k]=sup[k]||{s:k,v:0,n:0,w:0}; s.w++});
+  var sl=Object.keys(sup).map(function(k){return sup[k]}).sort(function(a,b){return b.v-a.v||b.w-a.w});
+  var multi=cl.filter(function(r){return r.n_quotes>=2}).length;
+  var notLow=chosen.filter(function(r){return r.lowest!=null&&Number(r.chosen_price)>Number(r.lowest)+0.005});
+  var jobs={}; withCost.forEach(function(r){var j=jobs[r.serial]=jobs[r.serial]||{s:r.serial,c:r.client_name,cost:0,buy:0}; j.cost+=r.est_price*r.qty; j.buy+=r.chosen_unit_price*r.qty});
+  var jl=Object.keys(jobs).map(function(k){return jobs[k]}).sort(function(a,b){return (b.cost-b.buy)-(a.cost-a.buy)});
+  return {title:'Purchasing KPIs'+(f.co?' — '+f.co:''),
+    note:'Savings compare the price chosen in the canvass (as quoted by the supplier) with the cost on the quotation. Spend = approved purchase requests. Canvasses are dated by when they started; requests by signing.',
+    kpis:[{l:'Savings vs quotation cost',v:costV-buyV,t:'m',h:costV?(rptPct(costV-buyV,costV).toFixed(1)+'% of '+money(costV)):'no items with a quotation cost'},
+      {l:'Committed spend',v:rptSum(sp,function(r){return r.amount}),t:'m',h:'approved requests'},
+      {l:'Canvass: start to approved',v:cvT,t:'days',h:'average'},{l:'Request: signed to approved',v:prT,t:'days',h:'average'},
+      {l:'Approved to Odoo PO',v:poT,t:'days',h:'average'},
+      {l:'Items with 2+ quotes',v:rptPct(multi,cl.length),t:'p',h:multi+' of '+cl.length+' items'},
+      {l:'Not the cheapest',v:notLow.length,t:'n',h:'chosen with a reason'}],
+    charts:[{k:'u_sup',title:'Spend by supplier',type:'bar',labels:sl.filter(function(s){return s.v}).slice(0,10).map(function(s){return s.s}),values:sl.filter(function(s){return s.v}).slice(0,10).map(function(s){return s.v}),t:'m'},
+      {k:'u_sav',title:'Savings by job',type:'bar',labels:jl.slice(0,10).map(function(j){return j.s}),values:jl.slice(0,10).map(function(j){return j.cost-j.buy}),t:'m'}],
+    tables:[{k:'u_jobs',title:'Savings vs quotation cost, by job',cols:[['Quotation','t'],['Client','t'],['Quotation cost','m'],['Chosen price','m'],['Savings','m'],['Savings %','p']],
+        rows:jl.map(function(j){return [j.s,j.c,j.cost,j.buy,j.cost-j.buy,rptPct(j.cost-j.buy,j.cost)]})},
+      {k:'u_sup',title:'Suppliers',cols:[['Supplier','t'],['Committed spend','m'],['Items purchased','n'],['Items won in canvass','n']],rows:sl.map(function(s){return [s.s,s.v,s.n,s.w]})},
+      {k:'u_disc',title:'Chosen although not the cheapest',cols:[['Canvass','t'],['Quotation','t'],['Item','t'],['Supplier','t'],['Chosen (compare)','m'],['Lowest','m'],['Reason','t']],
+        rows:notLow.map(function(r){return [r.cv_no,r.serial,r.item_name,r.supplier,r.chosen_price,r.lowest,r.choose_reason]})},
+      {k:'u_turn',title:'Turnaround by canvass',cols:[['Canvass','t'],['Quotation','t'],['Status','t'],['Started','d'],['Days to approved','days'],['Head of Plant Ops needed','t']],
+        rows:cvList.map(function(c){return [c.cv_no,c.serial,(CV_STATUS[c.status]||[c.status])[0],c.started_at,(c.status==='approved'||c.status==='converted')?rptDays(c.started_at,c.hpo_at||c.submitted_at):null,c.needs_hpo?'Yes':'No']})},
+      {k:'u_req',title:'Purchase requests',cols:[['Request','t'],['Quotation','t'],['Status','t'],['Signed','d'],['Days to approved','days'],['Days to Odoo PO','days'],['Chosen total','m']],
+        rows:req.map(function(r){return [r.pr_no,r.serial,statusLabel(r.status),r.signed_at,rptDays(r.signed_at,r.hpo_approved_at),rptDays(r.hpo_approved_at,r.first_po_at),r.awarded_total]})}]};
+}
+
+/* ---------- screen ---------- */
+async function viewReports(){
+  var _vs=render._seq, kind=RPT_KIND[TAB]||'sales';
+  if(!rptAllowed()){ VIEW(_vs).innerHTML='<div class="card"><h3>Reports</h3><p class="sub">Reports are for Admins, Directors and approvers.</p></div>'; return; }
+  if(!RPT.data[kind]){
+    VIEW(_vs).innerHTML='<div class="empty">Loading report data…</div>';
+    var fn={sales:'adm_rpt_sales',payments:'adm_rpt_payments',purchasing:'adm_rpt_purchasing'}[kind];
+    var r=await supa.rpc(fn);
+    if(r.error){ VIEW(_vs).innerHTML='<div class="card"><h3>The report could not load</h3><p class="sub">'+esc(errMsg(r.error))+'</p></div>'; return; }
+    if(kind==='sales'||kind==='payments'){ RPT.data[kind]=r.data||[]; } else RPT.data[kind]=r.data||{};
+    if(kind==='payments'&&!RPT.data.sales){ /* agent list comes from the rows themselves */ }
+  }
+  var sv=await supa.from('adm_saved_reports').select('*').eq('report',kind).order('name');
+  RPT.saved=sv.data||[];
+  if(_vs!==render._seq) return;
+  rptDraw(kind,_vs);
+}
+function rptDraw(kind,_vs){
+  var f=rptCfg(kind);
+  var model=kind==='sales'?rptSalesModel(f):kind==='payments'?rptPayModel(f):rptPurchModel(f);
+  model.kind=kind; model.f=JSON.parse(JSON.stringify(f)); RPT.model=model;
+  var rows=kind==='purchasing'?[]:(RPT.data[kind]||[]);
+  var agents={}; rows.forEach(function(r){if(r.agent)agents[r.agent]=1});
+  var opt=function(v,l,cur){return '<option value="'+esc(v)+'"'+(v===cur?' selected':'')+'>'+esc(l)+'</option>'};
+  var hid=function(k){return f.hidden.indexOf(k)>=0};
+  var h='<div class="card"><div class="row" style="flex-wrap:wrap;gap:8px;align-items:center"><h3 style="margin:0">'+esc(model.title)+'</h3><div style="flex:1"></div>'+
+      '<select id="rSaved" style="width:auto;min-width:200px"><option value="">Saved reports…</option>'+
+        RPT.saved.map(function(s){return '<option value="'+esc(s.id)+'">'+esc(s.name)+(s.shared?' (shared)':'')+((s.owner_email||'').toLowerCase()!==ME.email?' — '+esc(s.owner_email):'')+'</option>'}).join('')+'</select>'+
+      '<button data-act="rptSave"><i class="ti ti-device-floppy"></i> Save</button>'+
+      '<button data-act="rptXlsx"><i class="ti ti-file-spreadsheet"></i> Excel</button>'+
+      '<button data-act="rptPrint"><i class="ti ti-printer"></i> Print / PDF</button>'+
+      '<button data-act="rptPptx"><i class="ti ti-presentation"></i> PowerPoint</button></div>'+
+    '<p class="sub" style="margin-top:6px">'+esc(model.note)+'</p>'+
+    '<div class="row" style="flex-wrap:wrap;gap:8px;align-items:flex-end">'+
+      '<div><label>From</label><input id="rFrom" type="date" value="'+esc(f.from)+'" style="width:160px"></div>'+
+      '<div><label>To</label><input id="rTo" type="date" value="'+esc(f.to)+'" style="width:160px"></div>'+
+      '<div class="row" style="gap:4px">'+[['month','This month'],['q3','Last 3 months'],['year','This year'],['all','All time']].map(function(q){
+        return '<button class="ghost" data-act="rptRange" data-r="'+q[0]+'" style="padding:4px 9px;font-size:12px">'+q[1]+'</button>'}).join('')+'</div>'+
+      '<div><label>Company</label><select id="rCo" style="width:130px">'+opt('','All',f.co)+opt('MSSI','MSSI',f.co)+opt('WCLI','WCLI',f.co)+opt('CWLI','CWLI',f.co)+'</select></div>'+
+      (kind!=='purchasing'?'<div><label>Agent</label><select id="rAg" style="width:170px">'+opt('','All agents',f.agent)+Object.keys(agents).sort().map(function(a){return opt(a,a,f.agent)}).join('')+'</select></div>':'')+
+      '<div><label>Client contains</label><input id="rCl" value="'+esc(f.client)+'" style="width:170px"></div>'+
+      (kind==='sales'?'<div><label>Group chart by</label><select id="rGr" style="width:120px">'+opt('month','Month',f.group)+opt('quarter','Quarter',f.group)+opt('year','Year',f.group)+'</select></div>':'')+
+    '</div>'+
+    '<details style="margin-top:8px"><summary class="mini" style="cursor:pointer">Customise — choose the sections to include</summary><div class="row" style="flex-wrap:wrap;gap:12px;margin-top:6px">'+
+      model.charts.concat(model.tables).map(function(s){return '<label style="display:flex;gap:6px;align-items:center;margin:0;font-weight:normal"><input type="checkbox" data-sec="'+esc(s.k)+'" style="width:auto"'+(hid(s.k)?'':' checked')+'> '+esc(s.title)+'</label>'}).join('')+
+    '</div></details></div>';
+  h+='<div class="grid g4">'+model.kpis.map(function(k){return kpi(k.l,rptFmt(k.v,k.t),k.h||'')}).join('')+'</div>';
+  var ch=model.charts.filter(function(c){return !hid(c.k)});
+  if(ch.length) h+='<div class="grid g2">'+ch.map(function(c){return '<div class="card"><h3>'+esc(c.title)+'</h3>'+rptSvg(c,false)+'</div>'}).join('')+'</div>';
+  model.tables.filter(function(t){return !hid(t.k)}).forEach(function(t){
+    h+='<div class="card"><h3>'+esc(t.title)+' <span class="mini">('+t.rows.length+')</span></h3>'+
+      (t.rows.length?'<div style="overflow-x:auto;max-height:460px;overflow-y:auto"><table><thead><tr>'+t.cols.map(function(c){return '<th'+(/[mnpd]|days/.test(c[1])&&c[1]!=='t'&&c[1]!=='d'?' class="num"':'')+'>'+esc(c[0])+'</th>'}).join('')+'</tr></thead><tbody>'+
+        t.rows.map(function(r){return '<tr>'+r.map(function(v,i){var ty=t.cols[i][1];return '<td'+(ty==='m'||ty==='n'||ty==='p'||ty==='days'?' class="num"':'')+'>'+esc(rptFmt(v,ty))+'</td>'}).join('')+'</tr>'}).join('')+
+        '</tbody></table></div>':'<div class="empty">Nothing in this range.</div>')+'</div>';
+  });
+  VIEW(_vs).innerHTML=h;
+  var redraw=function(){ rptDraw(kind,render._seq); };
+  var bind=function(id,k){var e=el(id); if(e) e.onchange=function(){f[k]=this.value; redraw();}};
+  bind('rFrom','from'); bind('rTo','to'); bind('rCo','co'); bind('rAg','agent'); bind('rGr','group');
+  var c=el('rCl'); if(c){ var t; c.oninput=function(){var v=this.value; clearTimeout(t); t=setTimeout(function(){f.client=v; redraw(); setTimeout(function(){var e=el('rCl'); if(e){e.focus(); e.setSelectionRange(v.length,v.length)}},0)},400)}; }
+  document.querySelectorAll('[data-sec]').forEach(function(b){b.onchange=function(){var k=this.getAttribute('data-sec');
+    f.hidden=f.hidden.filter(function(x){return x!==k}); if(!this.checked) f.hidden.push(k); redraw(); var d=document.querySelector('#view details'); if(d) d.open=true;}});
+  var s=el('rSaved'); if(s) s.onchange=function(){ var sr=RPT.saved.filter(function(x){return x.id===s.value})[0]; if(!sr) return;
+    RPT.cfg[kind]=Object.assign(rptDefaults(kind),sr.config||{}); RPT.cfg[kind].hidden=(sr.config&&sr.config.hidden)||[]; toast('Opened "'+sr.name+'".','ok'); redraw(); };
+}
+function rptRange(r){
+  var kind=RPT_KIND[TAB], f=rptCfg(kind), d=new Date(), p=function(x){return x.toISOString().slice(0,10)};
+  if(r==='month'){ f.from=p(new Date(d.getFullYear(),d.getMonth(),1,12)); f.to=''; }
+  else if(r==='q3'){ f.from=p(new Date(d.getFullYear(),d.getMonth()-2,1,12)); f.to=''; }
+  else if(r==='year'){ f.from=d.getFullYear()+'-01-01'; f.to=''; }
+  else { f.from=''; f.to=''; }
+  rptDraw(kind,render._seq);
+}
+function rptSave(){
+  var kind=RPT_KIND[TAB], f=rptCfg(kind);
+  openModal('<h3>Save this report</h3><p class="sub">Saves the filters, chart grouping and chosen sections. Dates are saved as they are now.</p>'+
+    '<label>Name</label><input id="svN" placeholder="e.g. MSSI sales — this quarter">'+
+    '<label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input id="svS" type="checkbox" style="width:auto"> Share with everyone in KEYSTONE</label>'+
+    '<div class="row right" style="margin-top:14px"><button class="ghost" data-act="closeModal">Cancel</button><button class="primary" id="svOk">Save</button></div>');
+  el('svOk').onclick=async function(){
+    var n=el('svN').value.trim(); if(!n){toast('Give it a name.','err');return}
+    this.disabled=true;
+    var ex=RPT.saved.filter(function(s){return s.name.toLowerCase()===n.toLowerCase()&&(s.owner_email||'').toLowerCase()===ME.email})[0];
+    var row={name:n,report:kind,config:JSON.parse(JSON.stringify(f)),shared:el('svS').checked};
+    var r=ex?await supa.from('adm_saved_reports').update(row).eq('id',ex.id):await supa.from('adm_saved_reports').insert(row);
+    if(r.error){toast(errMsg(r.error),'err');this.disabled=false;return}
+    closeModal(); toast(ex?'Saved report updated.':'Report saved.','ok'); render();
+  };
+}
+
+/* ---------- charts (inline SVG; the same drawing is used on screen and in print) ---------- */
+function rptSvg(c,print){
+  var lab=c.labels||[], W=560, ink=print?'#111':'#e7e9ee', sub=print?'#555':'#9aa3b2', grid=print?'#ddd':'#2a2f3a', col=['#4f8cff','#d99a2b','#2ea86b'];
+  var short=function(v){v=Number(v)||0; var a=Math.abs(v); return (a>=1e6?(v/1e6).toFixed(1)+'M':a>=1e3?(v/1e3).toFixed(0)+'k':String(Math.round(v)))};
+  if(!lab.length) return '<div class="empty">Nothing in this range.</div>';
+  var e=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]})};
+  if(c.type==='bar'){ // horizontal bars
+    var max=Math.max.apply(null,c.values.map(function(v){return Math.abs(v)}).concat([1])), rowH=26, H=lab.length*rowH+10, lw=170;
+    return '<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="max-width:'+W+'px">'+lab.map(function(l,i){var v=c.values[i]||0, w=Math.max(1,(W-lw-80)*Math.abs(v)/max), y=i*rowH+5;
+      return '<text x="'+(lw-6)+'" y="'+(y+15)+'" font-size="12" text-anchor="end" fill="'+sub+'">'+e(String(l).slice(0,26))+'</text>'+
+        '<rect x="'+lw+'" y="'+y+'" width="'+w+'" height="'+(rowH-8)+'" rx="3" fill="'+(v<0?'#d9534f':col[0])+'"/>'+
+        '<text x="'+(lw+w+6)+'" y="'+(y+15)+'" font-size="12" fill="'+ink+'">'+e(c.t==='m'?'₱'+short(v):short(v))+'</text>'}).join('')+'</svg>';
+  }
+  var series=c.type==='col2'?c.series:[{n:'',v:c.values}], H2=220, base=180, left=46;
+  var max2=Math.max.apply(null,[1].concat.apply([],series.map(function(s){return s.v.map(function(v){return Math.abs(v)||0})})));
+  var slot=(W-left-10)/lab.length, bw=Math.min(46,slot*0.7/series.length);
+  var out='<svg viewBox="0 0 '+W+' '+H2+'" width="100%" style="max-width:'+W+'px">';
+  [0,0.5,1].forEach(function(g){var y=base-g*(base-20); out+='<line x1="'+left+'" x2="'+W+'" y1="'+y+'" y2="'+y+'" stroke="'+grid+'"/><text x="'+(left-4)+'" y="'+(y+4)+'" font-size="10" text-anchor="end" fill="'+sub+'">'+short(max2*g)+'</text>'});
+  lab.forEach(function(l,i){ series.forEach(function(s,j){ var v=s.v[i]||0, h=(base-20)*Math.abs(v)/max2, x=left+i*slot+(slot-bw*series.length)/2+j*bw;
+      out+='<rect x="'+x+'" y="'+(base-h)+'" width="'+(bw-2)+'" height="'+h+'" rx="2" fill="'+col[j]+'"><title>'+e(l)+': '+e(money(v))+'</title></rect>'; });
+    out+='<text x="'+(left+i*slot+slot/2)+'" y="'+(base+14)+'" font-size="10" text-anchor="middle" fill="'+sub+'">'+e(String(l).slice(0,12))+'</text>'; });
+  if(c.type==='col2') out+=series.map(function(s,j){return '<rect x="'+(left+j*110)+'" y="'+(H2-14)+'" width="10" height="10" fill="'+col[j]+'"/><text x="'+(left+14+j*110)+'" y="'+(H2-5)+'" font-size="11" fill="'+ink+'">'+e(s.n)+'</text>'}).join('');
+  return out+'</svg>';
+}
+
+/* ---------- exports ---------- */
+function rptVisible(){ var m=RPT.model, h=m.f.hidden||[]; return {charts:m.charts.filter(function(c){return h.indexOf(c.k)<0}),tables:m.tables.filter(function(t){return h.indexOf(t.k)<0})}; }
+function rptFilterText(){ var f=RPT.model.f;
+  return [(f.from||f.to)?('Dates: '+(f.from||'start')+' to '+(f.to||'today')):'All dates',f.co?'Company: '+f.co:'All companies',f.agent?'Agent: '+f.agent:'',f.client?'Client contains: '+f.client:''].filter(Boolean).join(' · '); }
+function rptFileName(ext){ return (RPT.model.title.replace(/[^A-Za-z0-9]+/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.'+ext); }
+async function rptXlsx(){
+  try{ await loadXLSX(); }catch(e){ toast(errMsg(e),'err'); return; }
+  var m=RPT.model, v=rptVisible(), wb=XLSX.utils.book_new();
+  var cell=function(val,t){ if(val==null||val==='') return ''; if(t==='d') return rptD(val); if(t==='t') return String(val); if(t==='p'||t==='days'||t==='m'||t==='n') return Math.round(Number(val)*100)/100; return val; };
+  var k=[[m.title],[rptFilterText()],['Generated '+new Date().toLocaleString()],[],['KPI','Value','Note']].concat(m.kpis.map(function(x){return [x.l,cell(x.v,x.t),(x.t==='p'?'percent':x.t==='days'?'days':x.t==='m'?'PHP':'')+(x.h?(' — '+x.h):'')]}));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(k),'KPIs');
+  v.tables.forEach(function(t){ var aoa=[t.cols.map(function(c){return c[0]})].concat(t.rows.map(function(r){return r.map(function(x,i){return cell(x,t.cols[i][1])})}));
+    var ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=t.cols.map(function(c){return {wch:Math.max(12,c[0].length+2)}});
+    XLSX.utils.book_append_sheet(wb,ws,t.title.replace(/[\\\/\?\*\[\]:]/g,' ').slice(0,31)); });
+  v.charts.forEach(function(c){ var aoa=c.type==='col2'?[['']].concat([]):null;
+    if(c.type==='col2'){ aoa=[[''].concat(c.series.map(function(s){return s.n}))].concat(c.labels.map(function(l,i){return [l].concat(c.series.map(function(s){return Math.round(s.v[i]*100)/100}))})); }
+    else aoa=[['',c.title]].concat(c.labels.map(function(l,i){return [l,Math.round(c.values[i]*100)/100]}));
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),('Chart '+c.title).replace(/[\\\/\?\*\[\]:]/g,' ').slice(0,31)); });
+  XLSX.writeFile(wb,rptFileName('xlsx'));
+}
+function rptPrint(){
+  var m=RPT.model, v=rptVisible();
+  var e=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]})};
+  var html='<html><head><title>'+e(m.title)+'</title><style>body{font:12px Arial,sans-serif;color:#111;background:#fff;margin:22px}h1{font-size:19px;margin:0}h2{font-size:14px;margin:18px 0 6px}'+
+    '.k{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.k div{border:1px solid #ccc;border-radius:6px;padding:8px}.k b{display:block;font-size:16px;margin-top:2px}.k i{color:#666;font-size:10.5px;font-style:normal}'+
+    '.c{display:grid;grid-template-columns:1fr 1fr;gap:14px}.c>div{border:1px solid #ddd;border-radius:6px;padding:8px;page-break-inside:avoid}'+
+    'table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:3px 5px;text-align:left}th{background:#f1f1f1}.n{text-align:right;white-space:nowrap}td:first-child{white-space:nowrap}tr{page-break-inside:avoid}</style></head><body>'+
+    '<h1>'+e(m.title)+'</h1><div style="color:#444">'+e(rptFilterText())+' · generated '+e(new Date().toLocaleString())+'</div>'+
+    '<div style="color:#555;font-size:11px;margin-top:4px">'+e(m.note)+'</div>'+
+    '<div class="k">'+m.kpis.map(function(k){return '<div>'+e(k.l)+'<b>'+e(rptFmt(k.v,k.t))+'</b><i>'+e(k.h||'')+'</i></div>'}).join('')+'</div>'+
+    (v.charts.length?'<div class="c" style="margin-top:14px">'+v.charts.map(function(c){return '<div><h2 style="margin-top:0">'+e(c.title)+'</h2>'+rptSvg(c,true)+'</div>'}).join('')+'</div>':'')+
+    v.tables.map(function(t){return '<h2>'+e(t.title)+' ('+t.rows.length+')</h2>'+(t.rows.length?'<table><tr>'+t.cols.map(function(c){return '<th>'+e(c[0])+'</th>'}).join('')+'</tr>'+
+      t.rows.map(function(r){return '<tr>'+r.map(function(x,i){var ty=t.cols[i][1];return '<td'+(ty==='m'||ty==='n'||ty==='p'||ty==='days'?' class="n"':'')+'>'+e(rptFmt(x,ty))+'</td>'}).join('')+'</tr>'}).join('')+'</table>':'<div>Nothing in this range.</div>')}).join('')+
+    '<p style="font-size:10px;color:#555;margin-top:14px">KEYSTONE report. To save as PDF, choose "Save as PDF" as the printer.</p></body></html>';
+  var w=window.open('','_blank'); if(!w){toast('Allow pop-ups to print.','err');return}
+  w.document.write(html); w.document.close(); setTimeout(function(){w.focus();w.print()},400);
+}
+function loadPptx(){ return window.PptxGenJS?Promise.resolve():new Promise(function(ok,no){
+  var tryLoad=function(urls){ if(!urls.length) return no(new Error('Could not load the PowerPoint maker.'));
+    var s=document.createElement('script'); s.src=urls[0]; s.onload=ok; s.onerror=function(){tryLoad(urls.slice(1))}; document.head.appendChild(s); };
+  tryLoad(['https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.js','https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js']); }); }
+async function rptPptx(){
+  try{ await loadPptx(); }catch(e){ toast(errMsg(e),'err'); return; }
+  var m=RPT.model, v=rptVisible(), pptx=new PptxGenJS(); pptx.layout='LAYOUT_WIDE';
+  var dark='1F2937', acc='4F8CFF';
+  var s=pptx.addSlide(); s.background={color:'0F1115'};
+  s.addText(m.title,{x:0.6,y:2.2,w:12,h:1,fontSize:36,bold:true,color:'FFFFFF'});
+  s.addText(rptFilterText(),{x:0.6,y:3.2,w:12,h:0.5,fontSize:16,color:'9AA3B2'});
+  s.addText('KEYSTONE · generated '+new Date().toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'}),{x:0.6,y:3.7,w:12,h:0.4,fontSize:12,color:'9AA3B2'});
+  s=pptx.addSlide(); s.addText('Key figures',{x:0.5,y:0.3,w:12,h:0.6,fontSize:24,bold:true,color:dark});
+  m.kpis.forEach(function(k,i){ var x=0.5+(i%4)*3.1, y=1.2+Math.floor(i/4)*2.0;
+    s.addShape(pptx.ShapeType.roundRect,{x:x,y:y,w:2.9,h:1.8,fill:{color:'F3F6FB'},line:{color:'D7DEEA'},rectRadius:0.08});
+    s.addText(k.l,{x:x+0.15,y:y+0.1,w:2.6,h:0.5,fontSize:12,color:'4B5563'});
+    s.addText(rptFmt(k.v,k.t),{x:x+0.15,y:y+0.55,w:2.6,h:0.6,fontSize:22,bold:true,color:dark});
+    if(k.h) s.addText(k.h,{x:x+0.15,y:y+1.15,w:2.6,h:0.5,fontSize:10,color:'6B7280'}); });
+  s.addText(m.note,{x:0.5,y:5.5,w:12.3,h:1,fontSize:10,color:'6B7280'});
+  v.charts.forEach(function(c){ s=pptx.addSlide(); s.addText(c.title,{x:0.5,y:0.3,w:12,h:0.6,fontSize:24,bold:true,color:dark});
+    if(!c.labels.length){ s.addText('Nothing in this range.',{x:0.5,y:2,w:12,h:1,fontSize:16,color:'6B7280'}); return; }
+    var data=c.type==='col2'?c.series.map(function(se){return {name:se.n,labels:c.labels,values:se.v.map(function(x){return Math.round(x*100)/100})}})
+      :[{name:c.title,labels:c.labels,values:c.values.map(function(x){return Math.round(x*100)/100})}];
+    s.addChart(pptx.ChartType.bar,data,{x:0.5,y:1.1,w:12.3,h:5.9,barDir:c.type==='bar'?'bar':'col',chartColors:c.type==='col2'?[acc,'D99A2B','2EA86B']:[acc],
+      showLegend:c.type==='col2',legendPos:'b',showValue:true,dataLabelFormatCode:'#,##0',valAxisLabelFormatCode:'#,##0',catAxisLabelFontSize:11,dataLabelFontSize:10}); });
+  v.tables.forEach(function(t){ s=pptx.addSlide(); s.addText(t.title+' ('+t.rows.length+')',{x:0.5,y:0.3,w:12,h:0.6,fontSize:22,bold:true,color:dark});
+    if(!t.rows.length){ s.addText('Nothing in this range.',{x:0.5,y:2,w:12,h:1,fontSize:16,color:'6B7280'}); return; }
+    var rows=[t.cols.map(function(c){return {text:c[0],options:{bold:true,fill:{color:'E8EEF9'},color:dark}}})].concat(
+      t.rows.map(function(r){return r.map(function(x,i){var ty=t.cols[i][1];return {text:rptFmt(x,ty),options:{align:(ty==='m'||ty==='n'||ty==='p'||ty==='days')?'right':'left'}}})}));
+    s.addTable(rows,{x:0.5,y:1.1,w:12.3,fontSize:10,color:'111827',border:{type:'solid',pt:0.5,color:'C9D2E0'},autoPage:true,autoPageRepeatHeader:true,newSlideStartY:0.6}); });
+  await pptx.writeFile({fileName:rptFileName('pptx')});
 }
 
 /* ================= 3. SOURCING ================= */
